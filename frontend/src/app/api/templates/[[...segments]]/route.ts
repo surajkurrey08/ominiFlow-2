@@ -46,7 +46,7 @@ async function handle(request: NextRequest, context: RouteContext, method: Proxy
 
   let body: BodyInit | undefined;
   const headers: Record<string, string> = { Accept: "application/json", Authorization: `Bearer ${token}` };
-  if (target.method === "POST") {
+  if (target.method === "POST" || target.method === "PATCH") {
     const contentType = request.headers.get("content-type") ?? "";
     if (contentType.startsWith("multipart/form-data")) {
       body = Buffer.from(await request.arrayBuffer());
@@ -54,9 +54,9 @@ async function handle(request: NextRequest, context: RouteContext, method: Proxy
     } else {
       const raw = await request.text();
       if (raw) {
-      try { JSON.parse(raw); } catch { return NextResponse.json({ error: "Invalid JSON request." }, { status: 400 }); }
-      body = raw;
-      headers["Content-Type"] = "application/json";
+        try { JSON.parse(raw); } catch { return NextResponse.json({ error: "Invalid JSON request." }, { status: 400 }); }
+        body = raw;
+        headers["Content-Type"] = "application/json";
       }
     }
   }
@@ -95,4 +95,10 @@ export function GET(request: NextRequest, context: RouteContext) {
 }
 export function POST(request: NextRequest, context: RouteContext) {
   return handle(request, context, "POST");
+}
+export function PATCH(request: NextRequest, context: RouteContext) {
+  return handle(request, context, "PATCH");
+}
+export function DELETE(request: NextRequest, context: RouteContext) {
+  return handle(request, context, "DELETE");
 }

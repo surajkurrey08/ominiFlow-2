@@ -20,6 +20,8 @@ export interface ChannelConnection {
   status: ChannelStatus;
   external_account_id: string | null;
   external_business_id: string | null;
+  display_phone_number?: string | null;
+  provider_metadata?: Record<string, unknown> | null;
   has_credentials: boolean;
   token_expires_at: string | null;
   is_active: boolean;

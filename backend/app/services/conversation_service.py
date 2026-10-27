@@ -135,6 +135,7 @@ def _summary_statement(tenant_id: uuid.UUID):
             Conversation.last_message_at,
             Conversation.created_at,
             Conversation.updated_at,
+            Conversation.conversation_metadata.label("conversation_metadata"),
             Contact.id.label("contact_id"),
             Contact.first_name.label("contact_first_name"),
             Contact.last_name.label("contact_last_name"),
@@ -174,6 +175,11 @@ def _row_to_response(row: Any) -> ConversationResponse:
         part for part in (row.contact_first_name, row.contact_last_name) if part
     )
 
+    meta = getattr(row, "conversation_metadata", None) or {}
+    mode = str(meta.get("mode") or "chatbot").lower() if isinstance(meta, dict) else "chatbot"
+    if mode not in ("chatbot", "human"):
+        mode = "chatbot"
+
     return ConversationResponse(
         id=row.id,
         status=row.status,
@@ -182,6 +188,7 @@ def _row_to_response(row: Any) -> ConversationResponse:
         last_message_at=row.last_message_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
+        mode=mode,
         contact=ConversationContactSummary(
             id=row.contact_id,
             name=(
@@ -344,8 +351,48 @@ def update_conversation(
     for field, value in data.model_dump(include={"subject"}, exclude_unset=True).items():
         setattr(conversation, field, value)
 
+    if data.mode is not None:
+        return change_mode(db, tenant_id, conversation_id, data.mode)
+
     _commit(db)
     return get_conversation(db, tenant_id, conversation_id)
+
+
+def change_mode(
+    db: Session,
+    tenant_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    mode: str,
+) -> ConversationResponse:
+    mode_clean = mode.lower().strip()
+    if mode_clean not in ("chatbot", "human"):
+        raise ConversationConflictError("Mode must be either 'chatbot' or 'human'.")
+
+    conversation = get_conversation_model(db, tenant_id, conversation_id, for_update=True)
+    meta = dict(conversation.conversation_metadata or {})
+    meta["mode"] = mode_clean
+    conversation.conversation_metadata = meta
+
+    # When switching to human mode, cancel active/waiting bot flow sessions
+    # so human agent has complete control without bot interjecting
+    if mode_clean == "human":
+        from app.models.flow_session import FlowSession, FlowSessionStatus
+        active_sessions = (
+            db.query(FlowSession)
+            .filter(
+                FlowSession.tenant_id == tenant_id,
+                FlowSession.conversation_id == conversation_id,
+                FlowSession.status.in_([FlowSessionStatus.ACTIVE.value, FlowSessionStatus.WAITING.value]),
+            )
+            .all()
+        )
+        for s in active_sessions:
+            s.status = FlowSessionStatus.COMPLETED.value
+            s.detail = "Ended by human takeover in inbox"
+
+    _commit(db)
+    return get_conversation(db, tenant_id, conversation_id)
+
 
 
 def assign_conversation(

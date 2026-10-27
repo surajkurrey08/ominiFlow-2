@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 import uuid
 
-from sqlalchemy import select, update, or_, and_
+from sqlalchemy import select, update, or_, and_, func
 from sqlalchemy.orm import Session
 
 from app.models.campaign import Campaign, CampaignStatus
@@ -174,5 +174,14 @@ def _process_single_recipient(db: Session, r: CampaignRecipient) -> None:
             r.error_summary = str(e)[:500]
             r.processed_at = now
             db.execute(update(Campaign).where(Campaign.id == campaign.id).values(failed_count=Campaign.failed_count + 1))
+
+    pending_or_processing = db.scalar(
+        select(func.count(CampaignRecipient.id)).where(
+            CampaignRecipient.campaign_id == campaign.id,
+            CampaignRecipient.status.in_([CampaignRecipientStatus.PENDING, CampaignRecipientStatus.PROCESSING]),
+        )
+    )
+    if pending_or_processing == 0:
+        campaign.status = CampaignStatus.COMPLETED
 
     db.commit()

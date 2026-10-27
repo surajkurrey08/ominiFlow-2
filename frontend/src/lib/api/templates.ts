@@ -14,6 +14,7 @@ export interface MessageTemplate {
   is_usable: boolean;
   components: Record<string, unknown>[];
   parameter_format: string | null;
+  rejected_reason?: string | null;
   last_synced_at: string | null;
   created_at: string;
   updated_at: string;

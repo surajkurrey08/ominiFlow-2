@@ -165,6 +165,14 @@ def handle_inbound(
         if not text or message.direction != MessageDirection.INBOUND.value:
             return None
 
+        # Mode check: if conversation is in human mode, pause bot/flow/AI auto-replies
+        # so human agent can reply manually. Default is "chatbot" (flow/bot active).
+        meta = conversation.conversation_metadata or {}
+        mode = str(meta.get("mode") or "chatbot").lower() if isinstance(meta, dict) else "chatbot"
+        if mode == "human":
+            logger.info("automation_skipped_human_mode", extra={"conversation_id": str(conversation.id), "tenant_id": str(tenant_id)})
+            return None
+
         # Priority: an in-progress flow consumes this message. A waiting-reply
         # session captures the reply (the worker resumes it); any other live
         # session means a flow is already running, so we do not keyword-match.

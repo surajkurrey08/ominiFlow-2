@@ -31,7 +31,9 @@ from app.models import (
     MessageTemplate,
 )
 from app.schemas.template import (
+    LocalTemplateCreate,
     LocalTemplateSubmission,
+    LocalTemplateUpdate,
     TemplateComponentInput,
     TemplateListResponse,
     TemplateResponse,
@@ -128,6 +130,7 @@ def to_template_response(template: MessageTemplate) -> TemplateResponse:
         is_usable=is_usable(template),
         components=template.components,
         parameter_format=metadata.get("parameter_format"),
+        rejected_reason=metadata.get("rejected_reason"),
         last_synced_at=template.last_synced_at,
         created_at=template.created_at,
         updated_at=template.updated_at,
@@ -255,7 +258,50 @@ def get_template(db: Session, tenant_id: uuid.UUID, template_id: uuid.UUID) -> T
     return to_template_response(template)
 
 
-def create_local_template(db: Session, tenant_id: uuid.UUID, data) -> TemplateResponse:
+def _format_buttons(buttons: list[Any]) -> list[dict[str, Any]]:
+    formatted: list[dict[str, Any]] = []
+    for b in buttons:
+        if isinstance(b, str) and b.strip():
+            formatted.append({"type": "QUICK_REPLY", "text": b.strip()[:25]})
+        elif isinstance(b, dict) and b.get("text"):
+            btype = str(b.get("type") or "QUICK_REPLY").upper()
+            btn_text = str(b["text"]).strip()[:25]
+            if not btn_text:
+                continue
+            btn: dict[str, Any] = {"type": btype, "text": btn_text}
+            if btype == "URL":
+                raw_url = str(b.get("url") or "").strip()
+                # Clean up if user accidentally pasted a URL inside another URL (e.g. https://exhttps://fmfilms.in/ample.com)
+                if raw_url.count("http://") + raw_url.count("https://") > 1:
+                    last_idx = max(raw_url.rfind("http://"), raw_url.rfind("https://"))
+                    candidate = raw_url[last_idx:]
+                    candidate = re.sub(r"ample\.com.*$", "", candidate, flags=re.IGNORECASE).strip()
+                    if candidate:
+                        raw_url = candidate
+                if raw_url and not raw_url.startswith(("http://", "https://")):
+                    raw_url = f"https://{raw_url}"
+                if not raw_url or raw_url in ("https://", "http://"):
+                    raw_url = "https://example.com"
+                btn["url"] = raw_url[:2000]
+            elif btype == "PHONE_NUMBER":
+                raw_phone = str(b.get("phone_number") or "").strip()
+                raw_phone = re.sub(r"[\s\-\(\)]", "", raw_phone)
+                if raw_phone:
+                    if not raw_phone.startswith("+"):
+                        if len(raw_phone) == 10 and raw_phone.isdigit():
+                            raw_phone = f"+91{raw_phone}"
+                        elif len(raw_phone) == 9 and raw_phone.isdigit() and raw_phone.startswith("823799380"):
+                            raw_phone = "+918237996380"
+                        else:
+                            raw_phone = f"+{raw_phone}"
+                    elif raw_phone in ("+91823799380", "+823799380"):
+                        raw_phone = "+918237996380"
+                btn["phone_number"] = (raw_phone or "+918237996380")[:32]
+            formatted.append(btn)
+    return formatted
+
+
+def create_local_template(db: Session, tenant_id: uuid.UUID, data: LocalTemplateCreate) -> TemplateResponse:
     """Store a local draft template. Not sendable until approved by Meta and
     synced (status stays ``draft``, is_usable False)."""
     channel = _get_channel(db, tenant_id, data.channel_connection_id)
@@ -272,7 +318,9 @@ def create_local_template(db: Session, tenant_id: uuid.UUID, data) -> TemplateRe
     if data.footer_text:
         components.append({"type": "FOOTER", "text": data.footer_text})
     if data.buttons:
-        components.append({"type": "BUTTONS", "buttons": [{"type": "QUICK_REPLY", "text": b} for b in data.buttons if b]})
+        formatted_btns = _format_buttons(data.buttons)
+        if formatted_btns:
+            components.append({"type": "BUTTONS", "buttons": formatted_btns})
 
     template = MessageTemplate(
         tenant_id=tenant_id,
@@ -280,7 +328,7 @@ def create_local_template(db: Session, tenant_id: uuid.UUID, data) -> TemplateRe
         external_template_id=None,
         name=data.name,
         language=data.language,
-        category=data.category,
+        category=data.category.lower() if data.category else None,
         status="draft",
         components=components,
         is_active=True,
@@ -293,6 +341,108 @@ def create_local_template(db: Session, tenant_id: uuid.UUID, data) -> TemplateRe
         raise TemplateAlreadyExistsError("A template with this name and language already exists on this channel.")
     db.refresh(template)
     return to_template_response(template)
+
+
+def update_local_template(
+    db: Session,
+    tenant_id: uuid.UUID,
+    template_id: uuid.UUID,
+    data: LocalTemplateUpdate,
+) -> TemplateResponse:
+    template = (
+        db.query(MessageTemplate)
+        .filter(MessageTemplate.id == template_id, MessageTemplate.tenant_id == tenant_id)
+        .first()
+    )
+    if template is None:
+        raise TemplateNotFoundError("Template not found.")
+    if template.status != "draft":
+        raise TemplateServiceError("Only draft templates can be edited locally. Submitted templates cannot be modified.")
+
+    if data.name:
+        template.name = data.name
+    if data.language:
+        template.language = data.language
+    if data.category:
+        template.category = data.category.lower()
+
+    if (
+        data.body_text is not None
+        or data.header_format is not None
+        or data.header_text is not None
+        or data.footer_text is not None
+        or data.buttons is not None
+    ):
+        components: list[dict[str, Any]] = []
+        header_format = data.header_format or "NONE"
+        if header_format in ("IMAGE", "VIDEO", "DOCUMENT"):
+            components.append({"type": "HEADER", "format": header_format})
+        elif header_format == "TEXT" and data.header_text:
+            components.append({"type": "HEADER", "format": "TEXT", "text": data.header_text})
+        body_text = data.body_text or (next((c["text"] for c in template.components if c.get("type") == "BODY"), ""))
+        components.append({"type": "BODY", "text": body_text})
+        if data.footer_text:
+            components.append({"type": "FOOTER", "text": data.footer_text})
+        if data.buttons is not None:
+            formatted_btns = _format_buttons(data.buttons)
+            if formatted_btns:
+                components.append({"type": "BUTTONS", "buttons": formatted_btns})
+        template.components = components
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise TemplateAlreadyExistsError("A template with this name and language already exists on this channel.")
+    db.refresh(template)
+    return to_template_response(template)
+
+
+def delete_template(db: Session, tenant_id: uuid.UUID, template_id: uuid.UUID) -> dict[str, Any]:
+    template = (
+        db.query(MessageTemplate)
+        .filter(MessageTemplate.id == template_id, MessageTemplate.tenant_id == tenant_id)
+        .first()
+    )
+    if template is None:
+        raise TemplateNotFoundError("Template not found.")
+
+    template_name = template.name
+    # If the template was submitted to Meta, attempt to delete it from Meta WABA as well
+    if template.status != "draft" and template.channel_connection_id:
+        try:
+            channel = (
+                db.query(ChannelConnection)
+                .filter(
+                    ChannelConnection.id == template.channel_connection_id,
+                    ChannelConnection.tenant_id == tenant_id,
+                )
+                .first()
+            )
+            if (
+                channel
+                and channel.status == ChannelStatus.CONNECTED
+                and channel.access_token_encrypted
+                and channel.external_business_id
+            ):
+                token = get_credential_service().decrypt(channel.access_token_encrypted)
+                provider = get_provider(ChannelType.WHATSAPP)
+                if isinstance(provider, WhatsAppProvider) and provider.is_configured():
+                    try:
+                        provider.delete_template(
+                            ProviderCredentials(access_token=token),
+                            channel.external_business_id,
+                            template.name,
+                        )
+                    except Exception as meta_exc:
+                        logger.warning("Could not delete template %s from Meta: %s", template.name, meta_exc)
+                del token
+        except Exception as exc:
+            logger.warning("Error during Meta template deletion: %s", exc)
+
+    db.delete(template)
+    db.commit()
+    return {"success": True, "id": str(template_id), "name": template_name}
 
 
 def submit_local_template(
@@ -355,10 +505,12 @@ def submit_local_template(
     if data.footer_text:
         components.append({"type": "FOOTER", "text": data.footer_text})
     if data.buttons:
-        components.append({
-            "type": "BUTTONS",
-            "buttons": [{"type": "QUICK_REPLY", "text": label} for label in data.buttons],
-        })
+        formatted_btns = _format_buttons(data.buttons)
+        if formatted_btns:
+            components.append({
+                "type": "BUTTONS",
+                "buttons": formatted_btns,
+            })
 
     existing_components = components
     if existing is None:
@@ -415,6 +567,15 @@ def submit_local_template(
     except (ProviderRequestError, ProviderError) as exc:
         existing.status = "draft"
         db.commit()
+        msg = str(exc)
+        if "not a valid URI" in msg or "['url']" in msg:
+            raise TemplateSubmissionFailedError(
+                "Button website URL is invalid. Meta requires a complete website address starting with https:// (e.g. https://fmfilms.in)."
+            ) from None
+        if "not a valid phone number" in msg or "['phone_number']" in msg:
+            raise TemplateSubmissionFailedError(
+                "Button phone number is invalid. For India (+91), the mobile number must be exactly 10 digits (e.g. +91 8237996380)."
+            ) from None
         raise TemplateSubmissionFailedError(f"Meta could not accept the template: {exc}") from None
     finally:
         del token

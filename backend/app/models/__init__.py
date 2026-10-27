@@ -59,6 +59,7 @@ from app.models.payment import PaymentTransaction, TenantAiCredit
 from app.models.credit_usage import CreditUsage
 from app.models.whatsapp_usage import WhatsAppUsageRecord
 from app.models.billing_invoice import BillingInvoice
+from app.models.social_post import SocialPost, SocialPostStatus, SocialPlatform
 
 
 
@@ -124,5 +125,8 @@ __all__ = [
     "CreditUsage",
     "WhatsAppUsageRecord",
     "BillingInvoice",
+    "SocialPost",
+    "SocialPostStatus",
+    "SocialPlatform",
 ]
 

@@ -78,6 +78,7 @@ export function CampaignForm() {
     loadDependencies();
   }, []);
 
+  const selectedChannel = useMemo(() => channels.find(c => c.id === channelId), [channels, channelId]);
   const selectedTemplate = useMemo(() => templates.find(t => t.id === templateId && t.channel_connection_id === channelId), [templates, templateId, channelId]);
   const variables = useMemo(() => bodyVariables(selectedTemplate), [selectedTemplate]);
   const header = useMemo(() => headerDetails(selectedTemplate), [selectedTemplate]);
@@ -365,7 +366,7 @@ export function CampaignForm() {
               <p className="text-xs text-slate-500">Templates can be delivered outside the 24-hour window — the right choice for broadcasts.</p>
             </div>
           ) : (
-            <div>
+            <div className="space-y-2">
               <textarea
                 rows={4}
                 value={textContent}
@@ -373,7 +374,21 @@ export function CampaignForm() {
                 className="w-full text-sm border-slate-300 rounded-lg shadow-sm"
                 placeholder="Write your message here..."
               />
-              <p className="text-xs text-slate-500 mt-1">Free text only reaches contacts inside the 24-hour customer-service window. Use a template to reach everyone.</p>
+              {selectedChannel?.channel_type === 'whatsapp' ? (
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 space-y-1">
+                  <div className="font-semibold flex items-center gap-1.5 text-amber-800">
+                    <span>⚠️ WhatsApp 24-Hour Policy Notice:</span>
+                  </div>
+                  <p className="leading-relaxed">
+                    Meta/WhatsApp only allows regular text messages to be delivered to contacts who messaged you in the last <strong>24 hours</strong>. Contacts outside the 24-hour window will not receive plain text broadcasts.
+                  </p>
+                  <p className="font-semibold text-amber-800">
+                    👉 To send broadcasts to everyone on WhatsApp, please choose <strong>Template</strong> above.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">Free text only reaches contacts inside the 24-hour customer-service window. Use a template to reach everyone.</p>
+              )}
             </div>
           )}
         </div>

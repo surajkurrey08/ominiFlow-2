@@ -265,6 +265,7 @@ button, a, input { -webkit-tap-highlight-color: transparent; }
 .channel-modal-scrim { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: #16192466; backdrop-filter: blur(2px); }
 .channel-modal { width: min(100%, 460px); border: 1px solid #e6ece9; border-radius: 18px; background: #ffffff; padding: 26px; box-shadow: 0 24px 70px #16192433; }
 .channel-modal-sm { width: min(100%, 420px); }
+.channel-modal-lg { width: min(100%, 540px); }
 .channel-modal h2 { color: #0b1028; font-size: 19px; font-weight: 650; letter-spacing: -.02em; }
 .channel-modal-sub { margin-top: 8px; color: #6d6e7c; font-size: 13px; line-height: 1.6; }
 .channel-form { display: flex; flex-direction: column; gap: 14px; margin-top: 18px; }

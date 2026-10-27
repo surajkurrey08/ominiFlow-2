@@ -128,6 +128,10 @@ export function changeInboxConversationStatus(conversationId: string, status: Co
   return inboxRequest<Conversation>(`/api/inbox/conversations/${encodeURIComponent(conversationId)}/status`, { method: "POST", body: { status } });
 }
 
+export function changeInboxConversationMode(conversationId: string, mode: "chatbot" | "human") {
+  return inboxRequest<Conversation>(`/api/inbox/conversations/${encodeURIComponent(conversationId)}/mode`, { method: "POST", body: { mode } });
+}
+
 export function getInboxChannelAvailability(channelId: string) {
   return inboxRequest<{ can_send: boolean }>(`/api/inbox/channels/${encodeURIComponent(channelId)}`);
 }

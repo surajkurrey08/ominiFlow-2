@@ -132,10 +132,25 @@ def _menu_text(node: dict[str, Any], contact: Contact | None, variables: dict[st
     lines = [body] if body else []
     for i, opt in enumerate(_options(node), start=1):
         title = str(opt.get("title") or opt.get("label") or f"Option {i}").strip()
-        lines.append(f"{i}. {title}")
+        kind = str(opt.get("kind") or "").lower()
+        phone = str(opt.get("phoneNumber") or opt.get("phone_number") or "").strip()
+        if kind == "call" or phone:
+            digits = "".join(c for c in phone if c.isdigit() or c == "+")
+            if digits and not digits.startswith("+"):
+                if len(digits) == 10 and not digits.startswith("91"):
+                    digits = f"+91{digits}"
+                else:
+                    digits = f"+{digits}"
+            lines.append(f"{i}. 📞 {title}: {digits}" if digits else f"{i}. 📞 {title}")
+        elif kind == "url" or opt.get("url"):
+            u = str(opt.get("url") or "").strip()
+            lines.append(f"{i}. 🔗 {title}: {u}" if u else f"{i}. {title}")
+        else:
+            lines.append(f"{i}. {title}")
     if not lines:
         lines = ["Please choose an option."]
     return "\n".join(lines)
+
 
 
 def _match_choice(node: dict[str, Any], reply: str, reply_id: str | None = None, reply_title: str | None = None) -> str | None:
@@ -214,19 +229,41 @@ def _send_text(db: Session, session: FlowSession, node_id: str, text: str, seq: 
     )
 
 
-def _send_template(db: Session, session: FlowSession, node: dict[str, Any]) -> None:
+def _send_template(db: Session, session: FlowSession, node: dict[str, Any], contact: Contact | None = None) -> None:
     data = node.get("data") or {}
     actor = _actor(db, session)
     if actor is None:
         raise OutboundMessageError("No user to send as.")
     key = uuid.uuid5(_NS, f"flow:{session.id}:{node.get('id')}:template")
+
+    raw_components = data.get("templateParams") or data.get("components") or []
+    variables = dict(session.variables or {})
+    components: list[dict[str, Any]] = []
+    for comp in raw_components:
+        if isinstance(comp, dict):
+            comp_copy = dict(comp)
+            params = comp.get("parameters") or []
+            new_params = []
+            for p in params:
+                if isinstance(p, dict):
+                    p_copy = dict(p)
+                    if p.get("type") == "text" and "text" in p:
+                        p_copy["text"] = _interpolate(str(p["text"]), contact, variables)
+                    new_params.append(p_copy)
+                else:
+                    new_params.append(p)
+            comp_copy["parameters"] = new_params
+            components.append(comp_copy)
+        else:
+            components.append(comp)
+
     outbound_message_service.send_message(
         db, session.tenant_id, actor, session.conversation_id,
         TemplateMessageCreate(
             type="template",
             template_name=str(data.get("templateName") or data.get("template_name") or ""),
             language=str(data.get("templateLanguage") or data.get("language") or "en_US"),
-            components=data.get("templateParams") or data.get("components") or [],
+            components=components,
         ),
         idempotency_key=key,
     )
@@ -498,7 +535,7 @@ def _execute(db: Session, session: FlowSession, node: dict[str, Any], contact: C
             return ("continue", None)
 
         if mt == "template":
-            _send_template(db, session, node)
+            _send_template(db, session, node, contact)
             return ("continue", None)
 
         if mt == "button":
@@ -551,7 +588,7 @@ def _execute(db: Session, session: FlowSession, node: dict[str, Any], contact: C
             return ("continue", None)
 
         if mt == "carousel":
-            _send_template(db, session, node)
+            _send_template(db, session, node, contact)
             return ("continue", None)
 
         # Unknown type: skip.
@@ -670,9 +707,15 @@ def _execute_razorpay(db: Session, session: FlowSession, node: dict[str, Any], c
 def _execute_whatsapp_form(db: Session, session: FlowSession, node: dict[str, Any], contact: Contact | None, variables: dict[str, Any]) -> None:
     data = node.get("data") or {}
     title = str(data.get("formTitle") or "Open Form")
+    form_id = str(data.get("formId") or "").strip()
     msg = _interpolate(str(data.get("message") or "Please fill out the form below:").strip(), contact, variables)
-    text = f"{msg}\n\n📋 *{title}*"
+    lines = [msg, f"📋 *{title}*"]
+    if form_id:
+        contact_param = f"?contact={contact.phone}" if (contact and contact.phone) else ""
+        lines.append(f"🔗 Tap to fill form: /form/{form_id}{contact_param}")
+    text = "\n\n".join(lines)
     _send_text(db, session, str(node.get("id")), text)
+
 
 
 def _execute_zoho_crm(session: FlowSession, node: dict[str, Any], contact: Contact | None, variables: dict[str, Any]) -> None:

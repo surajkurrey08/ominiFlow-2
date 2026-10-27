@@ -23,7 +23,19 @@ class LocalTemplateCreate(BaseModel):
     header_text: str | None = Field(default=None, max_length=60)
     body_text: str = Field(min_length=1, max_length=1024)
     footer_text: str | None = Field(default=None, max_length=60)
-    buttons: list[str] = Field(default_factory=list, max_length=11)
+    buttons: list[str | dict[str, Any]] = Field(default_factory=list, max_length=11)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+class LocalTemplateUpdate(BaseModel):
+    name: str | None = Field(default=None, pattern=TEMPLATE_NAME_PATTERN)
+    language: str | None = Field(default=None, pattern=LANGUAGE_PATTERN)
+    category: str | None = Field(default=None, max_length=30)
+    header_format: Literal["NONE", "TEXT", "IMAGE", "VIDEO", "DOCUMENT"] | None = None
+    header_text: str | None = Field(default=None, max_length=60)
+    body_text: str | None = Field(default=None, min_length=1, max_length=1024)
+    footer_text: str | None = Field(default=None, max_length=60)
+    buttons: list[str | dict[str, Any]] | None = Field(default=None, max_length=11)
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
@@ -36,7 +48,7 @@ class LocalTemplateSubmission(BaseModel):
     header_text: str | None = Field(default=None, max_length=60)
     body_text: str = Field(min_length=1, max_length=1024)
     footer_text: str | None = Field(default=None, max_length=60)
-    buttons: list[str] = Field(default_factory=list, max_length=3)
+    buttons: list[str | dict[str, Any]] = Field(default_factory=list, max_length=10)
     body_examples: list[str] = Field(default_factory=list, max_length=10)
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
@@ -52,8 +64,19 @@ class LocalTemplateSubmission(BaseModel):
             raise ValueError("Text headers require header text.")
         if self.header_format != "TEXT" and self.header_text:
             raise ValueError("Header text can only be set for a text header.")
-        if any(not button.strip() or len(button) > 25 for button in self.buttons):
-            raise ValueError("Quick-reply button labels must be between 1 and 25 characters.")
+        for button in self.buttons:
+            if isinstance(button, str):
+                if not button.strip() or len(button) > 25:
+                    raise ValueError("Quick-reply button labels must be between 1 and 25 characters.")
+            elif isinstance(button, dict):
+                text = str(button.get("text") or "").strip()
+                if not text or len(text) > 25:
+                    raise ValueError("Button text must be between 1 and 25 characters.")
+                btype = str(button.get("type") or "QUICK_REPLY").upper()
+                if btype == "URL" and not str(button.get("url") or "").strip():
+                    raise ValueError("URL button requires a valid website URL.")
+                if btype == "PHONE_NUMBER" and not str(button.get("phone_number") or "").strip():
+                    raise ValueError("Phone number button requires a valid phone number.")
         return self
 
 
@@ -69,6 +92,7 @@ class TemplateResponse(BaseModel):
     is_usable: bool
     components: list[dict[str, Any]]
     parameter_format: str | None
+    rejected_reason: str | None = None
     last_synced_at: datetime | None
     created_at: datetime
     updated_at: datetime

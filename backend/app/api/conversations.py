@@ -13,6 +13,7 @@ from app.models import ConversationStatus
 from app.schemas.conversation import (
     ConversationAssign,
     ConversationListResponse,
+    ConversationModeUpdate,
     ConversationResponse,
     ConversationStatusUpdate,
     ConversationUpdate,
@@ -160,6 +161,22 @@ def change_status(
 ):
     with service_errors(ERRORS):
         return conversation_service.change_status(db, tenant.id, conversation_id, data.status)
+
+
+@router.post(
+    "/{conversation_id}/mode",
+    response_model=ConversationResponse,
+    dependencies=[Depends(require_permission("conversation:update"))],
+)
+def change_mode(
+    conversation_id: uuid.UUID,
+    data: ConversationModeUpdate,
+    tenant: CurrentTenant,
+    db: DbSession,
+):
+    with service_errors(ERRORS):
+        return conversation_service.change_mode(db, tenant.id, conversation_id, data.mode)
+
 
 
 @router.get(

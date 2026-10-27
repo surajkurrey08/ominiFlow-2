@@ -5,6 +5,8 @@ export const metadata: Metadata = {
   title: "Edit WhatsApp Form | Omniflow",
 };
 
-export default function EditWhatsAppFormPage({ params }: { params: { id: string } }) {
-  return <FormEditor id={params.id} />;
+export default async function EditWhatsAppFormPage({ params }: { params: Promise<{ id: string }> }) {
+  const resolved = await params;
+  return <FormEditor id={resolved.id} />;
 }
+

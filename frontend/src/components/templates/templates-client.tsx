@@ -12,13 +12,14 @@ import {
   getTemplate,
   listTemplates,
   syncTemplates,
+  deleteTemplate,
   type AiTemplateDraft,
   type MessageTemplate,
 } from "@/lib/templates/browser";
 import { listChannels, type ChannelConnection } from "@/lib/channels/browser";
 
 const PAGE_SIZE = 20;
-const STATUS_OPTIONS = ["approved", "pending", "rejected", "paused", "disabled"] as const;
+const STATUS_OPTIONS = ["draft", "submitted", "pending", "approved", "rejected", "paused", "disabled", "failed"] as const;
 const CATEGORY_OPTIONS = ["marketing", "utility", "authentication"] as const;
 const PLACEHOLDER_RE = /\{\{\s*([a-z0-9_]+)\s*\}\}/gi;
 
@@ -27,9 +28,12 @@ type Notice = { kind: "success" | "error"; text: string } | null;
 const STATUS_TONE: Record<string, string> = {
   approved: "channel-pill-ok",
   pending: "channel-pill-warn",
+  submitted: "channel-pill-warn",
+  draft: "channel-pill-muted",
   rejected: "channel-pill-bad",
   paused: "channel-pill-muted",
   disabled: "channel-pill-muted",
+  failed: "channel-pill-bad",
 };
 
 function titleCase(value: string | null | undefined) {
@@ -115,6 +119,31 @@ export function TemplatesClient() {
   const [syncOpen, setSyncOpen] = useState(false);
   const [syncChannel, setSyncChannel] = useState("");
   const [syncing, setSyncing] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  async function handleDelete(template: MessageTemplate) {
+    if (!window.confirm(`Are you sure you want to delete template "${template.name}"? This action cannot be undone.`)) {
+      return;
+    }
+    setDeletingId(template.id);
+    setNotice(null);
+    try {
+      await deleteTemplate(template.id);
+      setTemplates((prev) => prev.filter((t) => t.id !== template.id));
+      setTotal((prev) => Math.max(0, prev - 1));
+      if (detail?.id === template.id) {
+        setDetail(null);
+      }
+      setNotice({ kind: "success", text: `Template "${template.name}" deleted successfully.` });
+    } catch (error) {
+      setNotice({
+        kind: "error",
+        text: error instanceof TemplateApiError ? error.message : "Failed to delete template.",
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   const channelsById = useMemo(() => {
     const map = new Map<string, ChannelConnection>();
@@ -352,7 +381,41 @@ export function TemplatesClient() {
                 <span role="cell" data-label="Status"><span className={`channel-pill ${STATUS_TONE[template.status] ?? "channel-pill-muted"}`}>{titleCase(template.status)}</span></span>
                 <span role="cell" data-label="Updated">{formatDate(template.updated_at)}</span>
                 <span role="cell" data-label="Actions" className="contact-actions-col">
-                  <button type="button" className="channel-action" onClick={() => void openDetail(template)}>Preview</button>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      className="px-2 py-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold rounded-md shadow-2xs"
+                      onClick={() => void openDetail(template)}
+                      title="Preview Template"
+                    >
+                      Preview
+                    </button>
+                    {template.status === "draft" && (
+                      <Link
+                        href={`/templates/new?id=${encodeURIComponent(template.id)}`}
+                        className="px-2 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 text-xs font-semibold rounded-md shadow-2xs"
+                        title="Edit Draft"
+                      >
+                        Edit
+                      </Link>
+                    )}
+                    <Link
+                      href={`/templates/new?duplicate=${encodeURIComponent(template.id)}`}
+                      className="px-2 py-1 bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-semibold rounded-md shadow-2xs"
+                      title="Duplicate Template"
+                    >
+                      Duplicate
+                    </Link>
+                    <button
+                      type="button"
+                      disabled={deletingId === template.id}
+                      onClick={() => void handleDelete(template)}
+                      className="px-2 py-1 bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 text-xs font-semibold rounded-md shadow-2xs disabled:opacity-50"
+                      title="Delete Template"
+                    >
+                      {deletingId === template.id ? "…" : "Delete"}
+                    </button>
+                  </div>
                 </span>
               </div>
             ))}
@@ -454,11 +517,42 @@ function TemplatePreview({ template, channelName, onClose }: { template: Message
           )}
         </div>
 
+        {template.rejected_reason && (
+          <div className="p-3.5 mb-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs space-y-1">
+            <div className="font-bold flex items-center gap-1.5 text-rose-700">
+              <svg className="w-4 h-4 shrink-0 text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span>Meta Rejection Notice</span>
+            </div>
+            <p className="font-medium">{template.rejected_reason}</p>
+            <p className="text-[11px] text-rose-600">
+              Duplicate this template to correct the issue and resubmit for approval.
+            </p>
+          </div>
+        )}
+
         <p className="tpl-send-note">
-          To send this template, open a conversation with the contact in the Inbox and choose it there — the 24-hour window and recipient are handled per conversation.
+          To send this template, open a conversation with the contact in the Inbox, select it in Broadcast campaigns, or trigger it via Chatbot Flows.
         </p>
 
-        <div className="channel-modal-actions">
+        <div className="channel-modal-actions flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/templates/new?duplicate=${encodeURIComponent(template.id)}`}
+              className="channel-secondary-btn"
+            >
+              Duplicate &amp; Edit
+            </Link>
+            {template.status === "draft" && (
+              <Link
+                href={`/templates/new?id=${encodeURIComponent(template.id)}`}
+                className="channel-primary-btn"
+              >
+                Edit Draft
+              </Link>
+            )}
+          </div>
           <button type="button" className="channel-secondary-btn" onClick={onClose}>Close</button>
         </div>
       </div>

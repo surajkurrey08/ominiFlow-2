@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from app.models.whatsapp_form import WhatsAppForm
-from app.schemas.whatsapp_form import WhatsAppFormCreate, WhatsAppFormUpdate
+from app.models.whatsapp_form import WhatsAppForm, WhatsAppFormSubmission
+from app.schemas.whatsapp_form import WhatsAppFormCreate, WhatsAppFormUpdate, WhatsAppFormSubmissionCreate
 
 def list_forms(db: Session, tenant_id: str, page: int = 1, size: int = 20):
     query = db.query(WhatsAppForm).filter(WhatsAppForm.tenant_id == tenant_id)
@@ -10,6 +10,9 @@ def list_forms(db: Session, tenant_id: str, page: int = 1, size: int = 20):
 
 def get_form(db: Session, tenant_id: str, form_id: str):
     return db.query(WhatsAppForm).filter(WhatsAppForm.tenant_id == tenant_id, WhatsAppForm.id == form_id).first()
+
+def get_public_form(db: Session, form_id: str):
+    return db.query(WhatsAppForm).filter(WhatsAppForm.id == form_id).first()
 
 def create_form(db: Session, tenant_id: str, data: WhatsAppFormCreate):
     form = WhatsAppForm(tenant_id=tenant_id, **data.model_dump())
@@ -35,3 +38,26 @@ def delete_form(db: Session, tenant_id: str, form_id: str):
         db.commit()
         return True
     return False
+
+def submit_form(db: Session, form_id: str, data: WhatsAppFormSubmissionCreate):
+    form = get_public_form(db, form_id)
+    if not form:
+        return None
+    sub = WhatsAppFormSubmission(
+        tenant_id=form.tenant_id,
+        form_id=form.id,
+        contact_phone=data.contact_phone,
+        contact_name=data.contact_name,
+        data=data.data,
+    )
+    db.add(sub)
+    db.commit()
+    db.refresh(sub)
+    return sub
+
+def list_submissions(db: Session, tenant_id: str, form_id: str):
+    return db.query(WhatsAppFormSubmission).filter(
+        WhatsAppFormSubmission.tenant_id == tenant_id,
+        WhatsAppFormSubmission.form_id == form_id,
+    ).order_by(WhatsAppFormSubmission.created_at.desc()).all()
+

@@ -17,10 +17,18 @@ class PlatformTemplateCreate(BaseModel):
     name: str = Field(pattern=TEMPLATE_NAME_PATTERN)
     label: str = Field(min_length=2, max_length=150)
     language: str = Field(pattern=LANGUAGE_PATTERN)
-    category: Literal["marketing", "utility"]
+    category: str = Field(min_length=2, max_length=30)
     body_text: str = Field(min_length=1, max_length=1024)
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, value: str) -> str:
+        cat = value.strip().lower()
+        if cat in ("authentication", "auth"):
+            raise ValueError("Authentication templates cannot be shared in the common library.")
+        return cat
 
     @field_validator("body_text")
     @classmethod

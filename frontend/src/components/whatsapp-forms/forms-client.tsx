@@ -19,6 +19,7 @@ export function FormsClient() {
   const [items, setItems] = useState<WhatsAppForm[]>([]);
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
+  const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function refresh() {
@@ -43,6 +44,14 @@ export function FormsClient() {
     [items, search]
   );
 
+  async function handleCopyLink(item: WhatsAppForm) {
+    if (typeof window === "undefined") return;
+    const url = `${window.location.origin}/form/${item.id}`;
+    await navigator.clipboard.writeText(url);
+    setToast(`Form link copied: ${url}`);
+    setTimeout(() => setToast(""), 3500);
+  }
+
   async function handleDelete(item: WhatsAppForm) {
     if (!window.confirm(`Delete “${item.name}”?`)) return;
     try {
@@ -55,6 +64,7 @@ export function FormsClient() {
       setBusy(false);
     }
   }
+
 
   return (
     <div className="bg-[#f8f9fa] min-h-screen">
@@ -77,6 +87,7 @@ export function FormsClient() {
         </div>
 
         {error && <p role="alert" className="rounded-xl bg-rose-50 p-4 text-rose-800 mb-6">{error}</p>}
+        {toast && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-emerald-800 font-semibold mb-6 border border-emerald-200">{toast}</p>}
 
         {/* Toolbar */}
         <div className="flex items-center justify-between mb-6">
@@ -141,34 +152,48 @@ export function FormsClient() {
                       <td className="py-4 px-6 text-sm text-slate-700">
                         {item.category || "-"}
                       </td>
-                      <td className="py-4 px-6">
-                        <div className="flex items-center justify-end gap-2">
-                          <Link href={`/whatsapp-forms/${item.id}`} className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-md text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors">
-                            <EditIcon className="w-3.5 h-3.5" />
-                            Edit
-                          </Link>
-                          <button disabled={busy} className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-md text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors">
-                            <CopyIcon className="w-3.5 h-3.5" />
-                            Copy
-                          </button>
-                          <button 
-                            disabled={busy} 
-                            onClick={() => handleDelete(item)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 border border-red-200 rounded-md text-sm font-semibold text-red-500 hover:bg-red-50 transition-colors"
-                          >
-                            <TrashIcon className="w-3.5 h-3.5" />
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                          <td className="py-4 px-6">
+                            <div className="flex items-center justify-end gap-2">
+                              <a
+                                href={`/form/${item.id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-md text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                                title="Open public mobile form preview"
+                              >
+                                View
+                              </a>
+                              <Link href={`/whatsapp-forms/${item.id}`} className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-md text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors">
+                                <EditIcon className="w-3.5 h-3.5" />
+                                Edit
+                              </Link>
+                              <button 
+                                onClick={() => handleCopyLink(item)} 
+                                disabled={busy} 
+                                className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-md text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                              >
+                                <CopyIcon className="w-3.5 h-3.5" />
+                                Copy Link
+                              </button>
+                              <button 
+                                disabled={busy} 
+                                onClick={() => handleDelete(item)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 border border-red-200 rounded-md text-sm font-semibold text-red-500 hover:bg-red-50 transition-colors"
+                              >
+                                <TrashIcon className="w-3.5 h-3.5" />
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
+      );
+    }
+

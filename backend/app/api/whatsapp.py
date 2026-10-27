@@ -23,6 +23,8 @@ from app.integrations.meta.graph_client import is_meta_configured
 from app.integrations.meta.webhooks import verify_signature, verify_subscription
 from app.schemas.channel import ChannelConnectionResponse
 from app.schemas.whatsapp import (
+    WhatsAppBusinessProfile,
+    WhatsAppBusinessProfileUpdateRequest,
     WhatsAppConnectionCheck,
     WhatsAppConnectRequest,
     WhatsAppEmbeddedSignupConfig,
@@ -141,6 +143,43 @@ def test_whatsapp_connection(
     with handle_service_errors():
         return whatsapp_service.check_whatsapp_channel(
             db, tenant.id, channel_id,
+        )
+
+
+# =========================
+# BUSINESS PROFILE
+# =========================
+
+@router.get(
+    "/channels/{channel_id}/whatsapp/profile",
+    response_model=WhatsAppBusinessProfile,
+    dependencies=[Depends(require_permission("channel:read"))],
+)
+def get_whatsapp_business_profile(
+    channel_id: uuid.UUID,
+    tenant: CurrentTenant,
+    db: DbSession,
+):
+    with handle_service_errors():
+        return whatsapp_service.get_whatsapp_business_profile(
+            db, tenant.id, channel_id,
+        )
+
+
+@router.post(
+    "/channels/{channel_id}/whatsapp/profile",
+    response_model=WhatsAppBusinessProfile,
+    dependencies=[Depends(require_permission("channel:update"))],
+)
+def update_whatsapp_business_profile(
+    channel_id: uuid.UUID,
+    data: WhatsAppBusinessProfileUpdateRequest,
+    tenant: CurrentTenant,
+    db: DbSession,
+):
+    with handle_service_errors():
+        return whatsapp_service.update_whatsapp_business_profile(
+            db, tenant.id, channel_id, data,
         )
 
 

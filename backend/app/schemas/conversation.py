@@ -52,6 +52,7 @@ class ConversationResponse(BaseModel):
     channel: ConversationChannelSummary
     assigned_user: ConversationUserSummary | None
     last_message: LastMessagePreview | None
+    mode: str = "chatbot"
 
 
 class ConversationListResponse(BaseModel):
@@ -63,6 +64,7 @@ class ConversationListResponse(BaseModel):
 
 class ConversationUpdate(BaseModel):
     subject: str | None = Field(default=None, min_length=1, max_length=255)
+    mode: str | None = Field(default=None, pattern="^(chatbot|human)$")
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -84,3 +86,10 @@ class ConversationStatusUpdate(BaseModel):
     status: ConversationStatus
 
     model_config = ConfigDict(extra="forbid")
+
+
+class ConversationModeUpdate(BaseModel):
+    mode: str = Field(..., pattern="^(chatbot|human)$")
+
+    model_config = ConfigDict(extra="forbid")
+

@@ -1,5 +1,6 @@
 import uuid
 from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 
 import jwt
@@ -7,6 +8,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import decode_token
 from app.models import (
@@ -110,6 +112,23 @@ def get_current_user(
         user_session = db.get(UserSession, session_id)
         if not user_session or not user_session.is_active:
             raise _credentials_exception()
+
+        now = datetime.now(timezone.utc)
+        timeout_hours = getattr(settings, "session_inactivity_timeout_hours", 24)
+        if user_session.last_active_at:
+            # Expire session only if no activity for 24 hours
+            if (now - user_session.last_active_at) > timedelta(hours=timeout_hours):
+                user_session.is_active = False
+                db.commit()
+                raise _credentials_exception()
+
+            # Active request: slide the session by updating last_active_at (throttled to 60s)
+            if (now - user_session.last_active_at).total_seconds() >= 60:
+                user_session.last_active_at = now
+                db.commit()
+        else:
+            user_session.last_active_at = now
+            db.commit()
 
     return user
 

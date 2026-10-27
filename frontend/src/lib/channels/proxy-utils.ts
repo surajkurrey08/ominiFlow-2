@@ -285,6 +285,15 @@ export function buildChannelProxyTarget(
     if (segments[2] === "test" && method === "POST" && params.size === 0) {
       return { backendPath: `/channels/${id}/whatsapp/test`, method: "POST", query: empty };
     }
+    if (segments[2] === "profile") {
+      if (method === "GET" && params.size === 0) {
+        return { backendPath: `/channels/${id}/whatsapp/profile`, method: "GET", query: empty };
+      }
+      if (method === "POST" && params.size === 0) {
+        if (!isRecord(body)) return null;
+        return { backendPath: `/channels/${id}/whatsapp/profile`, method: "POST", query: empty, body };
+      }
+    }
     return null;
   }
 

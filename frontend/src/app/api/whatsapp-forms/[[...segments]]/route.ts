@@ -8,10 +8,11 @@ type Context = { params: Promise<{ segments?: string[] }> };
 const FAIL = "The forms service is temporarily unavailable.";
 
 async function handle(request: NextRequest, context: Context, method: string) {
-  const token = await getSessionAccessToken();
-  if (!token) return clear(NextResponse.json({ error: "Sign in to continue." }, { status: 401 }));
-  
   const { segments = [] } = await context.params;
+  const isPublic = segments.length > 0 && segments[0] === "public";
+  const token = await getSessionAccessToken();
+  if (!token && !isPublic) return clear(NextResponse.json({ error: "Sign in to continue." }, { status: 401 }));
+  
   const pathParams = segments.length > 0 ? `/${segments.join('/')}` : '';
   
   let body: string | undefined;
@@ -25,15 +26,15 @@ async function handle(request: NextRequest, context: Context, method: string) {
   const url = backendApiUrl(`/api/v1/whatsapp-forms${pathParams}`);
   url.search = request.nextUrl.search;
   
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (body) headers["Content-Type"] = "application/json";
+
   let upstream: Response;
   try { 
     upstream = await fetch(url, { 
       method, 
-      headers: { 
-        Accept: "application/json", 
-        Authorization: `Bearer ${token}`, 
-        ...(body ? { "Content-Type": "application/json" } : {}) 
-      }, 
+      headers, 
       body, 
       cache: "no-store", 
       signal: request.signal 

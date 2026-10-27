@@ -393,10 +393,20 @@ class FlowEngineTests(InboxTestCase):
         self.pump()
 
         payloads = self.sent_payloads()
-        text_payload = next(p for p in payloads if p.get("type") == "text")
-        self.assertIn("*Contact Helpline*", text_payload["text"]["body"])
-        self.assertIn("+15551234567", text_payload["text"]["body"])
-        self.assertIn("_Available 9am - 6pm_", text_payload["text"]["body"])
+        first_payload = payloads[0]
+        if first_payload.get("type") == "interactive":
+            body = first_payload["interactive"]
+            self.assertEqual(body["type"], "cta_url")
+            self.assertEqual(body["header"]["text"], "Contact Helpline")
+            self.assertIn("+15551234567", body["body"]["text"])
+            self.assertEqual(body["footer"]["text"], "Available 9am - 6pm")
+            self.assertEqual(body["action"]["name"], "cta_url")
+            self.assertEqual(body["action"]["parameters"]["display_text"], "Call Helpdesk")
+            self.assertIn("/call?phone=", body["action"]["parameters"]["url"])
+        else:
+            self.assertIn("*Contact Helpline*", first_payload["text"]["body"])
+            self.assertIn("+15551234567", first_payload["text"]["body"])
+            self.assertIn("_Available 9am - 6pm_", first_payload["text"]["body"])
         # Because call-only buttons cannot be tapped in WhatsApp with reply webhooks,
         # the engine continues to the next node immediately.
         texts = self.sent_texts()
