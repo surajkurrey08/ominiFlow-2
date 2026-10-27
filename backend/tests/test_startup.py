@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from app.core.config import settings
-from app.main import ensure_default_platform_super_admin
+from app.main import app, ensure_default_platform_super_admin, ensure_default_platform_templates
 
 
 class PlatformAdminStartupTests(unittest.TestCase):
@@ -41,6 +41,46 @@ class PlatformAdminStartupTests(unittest.TestCase):
             ensure_default_platform_super_admin()
         self.session.commit.assert_not_called()
         hasher.assert_not_called()
+
+
+class PlatformTemplateStartupTests(unittest.TestCase):
+    def setUp(self):
+        self.session = MagicMock()
+        self.factory = MagicMock()
+        self.factory.return_value.__enter__.return_value = self.session
+
+    def test_template_seed_runs_after_admin_setup(self):
+        handlers = app.router.on_startup
+        self.assertLess(
+            handlers.index(ensure_default_platform_super_admin),
+            handlers.index(ensure_default_platform_templates),
+        )
+
+    def test_production_does_not_seed_templates(self):
+        for environment in ("production", "prod"):
+            with self.subTest(environment=environment), patch.object(settings, "app_env", environment), patch("app.core.database.SessionLocal", self.factory), patch("app.db.seed_platform_templates.seed_default_platform_templates") as seed:
+                ensure_default_platform_templates()
+                self.factory.assert_not_called()
+                seed.assert_not_called()
+
+    def test_development_seeds_templates_in_its_own_session(self):
+        with patch.object(settings, "app_env", "development"), patch("app.core.database.SessionLocal", self.factory), patch("app.db.seed_platform_templates.seed_default_platform_templates") as seed:
+            ensure_default_platform_templates()
+        self.factory.assert_called_once_with()
+        seed.assert_called_once_with(self.session)
+        self.factory.return_value.__exit__.assert_called_once()
+
+    def test_development_seed_failure_is_logged_without_crashing(self):
+        with patch.object(settings, "app_env", "development"), patch("app.core.database.SessionLocal", self.factory), patch("app.db.seed_platform_templates.seed_default_platform_templates", side_effect=RuntimeError("Seed unavailable")), self.assertLogs("app.main", level="WARNING") as logs:
+            ensure_default_platform_templates()
+        self.assertIn("Could not auto-seed platform templates", logs.output[0])
+        self.factory.return_value.__exit__.assert_called_once()
+
+    def test_development_database_failure_is_logged_without_crashing(self):
+        self.factory.return_value.__enter__.side_effect = RuntimeError("Database unavailable")
+        with patch.object(settings, "app_env", "development"), patch("app.core.database.SessionLocal", self.factory), patch("app.db.seed_platform_templates.seed_default_platform_templates") as seed, self.assertLogs("app.main", level="WARNING"):
+            ensure_default_platform_templates()
+        seed.assert_not_called()
 
 
 if __name__ == "__main__":

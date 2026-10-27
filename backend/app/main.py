@@ -408,13 +408,23 @@ def ensure_default_platform_super_admin():
                 if updated:
                     db.commit()
                     logger.info("Platform super admin privileges ensured for: %s", admin_email)
-            try:
-                from app.db.seed_platform_templates import seed_default_platform_templates
-                seed_default_platform_templates(db)
-            except Exception as seed_exc:
-                logger.warning("Could not auto-seed platform templates: %s", seed_exc)
     except Exception as exc:
         logger.warning("Could not auto-seed platform super admin: %s", exc)
+
+
+@app.on_event("startup")
+def ensure_default_platform_templates():
+    # Keep template seeding in its own transaction, separate from admin setup.
+    if settings.is_production:
+        return
+    from app.core.database import SessionLocal
+    from app.db.seed_platform_templates import seed_default_platform_templates
+
+    try:
+        with SessionLocal() as db:
+            seed_default_platform_templates(db)
+    except Exception as exc:
+        logger.warning("Could not auto-seed platform templates: %s", exc)
 
 
 
