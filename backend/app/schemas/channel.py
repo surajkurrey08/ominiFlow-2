@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID
 
 from pydantic import (
@@ -24,6 +25,8 @@ class ChannelConnectionResponse(BaseModel):
     status: ChannelStatus
     external_account_id: str | None
     external_business_id: str | None
+    display_phone_number: str | None = None
+    provider_metadata: dict[str, Any] | None = None
     # Whether encrypted credentials are stored. Credentials themselves
     # are never returned.
     has_credentials: bool

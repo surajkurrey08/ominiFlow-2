@@ -9,7 +9,7 @@ const STATUS_PATTERN = /^[A-Za-z_]{1,30}$/;
 const CATEGORY_PATTERN = /^[A-Za-z_]{1,30}$/;
 const LANGUAGE_PATTERN = /^[A-Za-z]{2,3}(_[A-Za-z0-9]{2,8})?$/;
 
-export type ProxyMethod = "GET" | "POST";
+export type ProxyMethod = "GET" | "POST" | "PATCH" | "DELETE";
 
 export interface TemplateProxyTarget {
   backendPath: string;
@@ -112,8 +112,10 @@ export function buildTemplateProxyTarget(
     return { backendPath: "/templates", method: "GET", query };
   }
 
-  if (segments.length === 1 && method === "GET" && params.size === 0 && UUID_PATTERN.test(segments[0])) {
-    return { backendPath: `/templates/${segments[0]}`, method: "GET", query: empty };
+  if (segments.length === 1 && params.size === 0 && UUID_PATTERN.test(segments[0])) {
+    if (method === "GET" || method === "PATCH" || method === "DELETE") {
+      return { backendPath: `/templates/${segments[0]}`, method, query: empty };
+    }
   }
 
   // POST /templates — create a local (draft) template.

@@ -671,37 +671,230 @@ export function NodeEditor({
         )}
 
         {/* Template Node Configuration */}
-        {messageType === "template" && (
-          <div className="space-y-3 pt-2 border-t border-slate-100">
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Approved Template</label>
-            {templates.length === 0 ? (
-              <p className="text-xs text-slate-500 border border-dashed border-slate-200 rounded-xl p-4 text-center">
-                No synced templates found. Sync from Templates page first.
-              </p>
-            ) : (
-              <select
-                value={String(d.templateName ?? "")}
-                onChange={(e) => {
-                  const t = templates.find((x) => x.name === e.target.value);
-                  onChange({ templateName: t?.name ?? "", templateLanguage: t?.language ?? "en_US" });
-                }}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium outline-none focus:border-blue-500"
-              >
-                <option value="">Select an approved template</option>
-                {templates.map((t) => (
-                  <option key={t.id} value={t.name} disabled={!t.is_usable}>
-                    {t.name} · {t.language}{t.is_usable ? "" : ` (${t.status})`}
-                  </option>
-                ))}
-              </select>
-            )}
-            {d.templateName ? (
-              <p className="text-xs font-medium text-emerald-700 bg-emerald-50 p-2.5 rounded-lg border border-emerald-100">
-                Sends <b>{String(d.templateName)}</b> ({String(d.templateLanguage ?? "en_US")}).
-              </p>
-            ) : null}
-          </div>
-        )}
+        {messageType === "template" && (() => {
+          const selectedTemplate = templates.find((x) => x.name === d.templateName);
+          const headerComp = selectedTemplate?.components.find((c) => String(c.type || "").toUpperCase() === "HEADER");
+          const bodyComp = selectedTemplate?.components.find((c) => String(c.type || "").toUpperCase() === "BODY");
+          const footerComp = selectedTemplate?.components.find((c) => String(c.type || "").toUpperCase() === "FOOTER");
+          const buttonsComp = selectedTemplate?.components.find((c) => String(c.type || "").toUpperCase() === "BUTTONS");
+
+          const headerText = typeof headerComp?.text === "string" ? headerComp.text : "";
+          const headerFormat = typeof headerComp?.format === "string" ? headerComp.format.toUpperCase() : "NONE";
+          const bodyText = typeof bodyComp?.text === "string" ? bodyComp.text : "";
+          const footerText = typeof footerComp?.text === "string" ? footerComp.text : "";
+          const tplButtons = Array.isArray(buttonsComp?.buttons) ? buttonsComp.buttons : [];
+
+          const headerPlaceholders = [...new Set([...headerText.matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g)].map((m) => m[1]))];
+          const bodyPlaceholders = [...new Set([...bodyText.matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g)].map((m) => m[1]))];
+
+          const currentComponents = (Array.isArray(d.templateParams) ? d.templateParams : []) as Array<{
+            type: string;
+            parameters?: Array<{ type: string; text?: string; [k: string]: unknown }>;
+          }>;
+
+          const getParamValue = (compType: "header" | "body", index: number): string => {
+            const comp = currentComponents.find((c) => c.type === compType);
+            return comp?.parameters?.[index]?.text ?? "";
+          };
+
+          const setParamValue = (compType: "header" | "body", totalCount: number, index: number, value: string) => {
+            const next = currentComponents.map((c) => ({
+              ...c,
+              parameters: Array.isArray(c.parameters) ? [...c.parameters] : [],
+            }));
+            let compIdx = next.findIndex((c) => c.type === compType);
+            if (compIdx === -1) {
+              next.push({ type: compType, parameters: [] });
+              compIdx = next.length - 1;
+            }
+            const comp = next[compIdx];
+            const params = Array.isArray(comp.parameters) ? [...comp.parameters] : [];
+            while (params.length < totalCount) {
+              params.push({ type: "text", text: "" });
+            }
+            params[index] = { type: "text", text: value };
+            comp.parameters = params;
+            onChange({ templateParams: next });
+          };
+
+          const renderPreviewText = (text: string, placeholders: string[], compType: "header" | "body") => {
+            if (!placeholders.length) return text;
+            let result = text;
+            placeholders.forEach((ph, idx) => {
+              const val = getParamValue(compType, idx);
+              result = result.replace(new RegExp(`\\{\\{\\s*${ph}\\s*\\}\\}`, "g"), val || `{{${ph}}}`);
+            });
+            return result;
+          };
+
+          return (
+            <div className="space-y-4 pt-2 border-t border-slate-100">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    WhatsApp Template
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      listTemplates({ page_size: 100 }).then((r) => setTemplates(r.items)).catch(() => {});
+                    }}
+                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-800"
+                  >
+                    ↻ Refresh
+                  </button>
+                </div>
+
+                {templates.length === 0 ? (
+                  <p className="text-xs text-slate-500 border border-dashed border-slate-200 rounded-xl p-4 text-center">
+                    No approved templates found. Create or sync approved templates first.
+                  </p>
+                ) : (
+                  <select
+                    value={String(d.templateName ?? "")}
+                    onChange={(e) => {
+                      const t = templates.find((x) => x.name === e.target.value);
+                      if (t) {
+                        onChange({
+                          templateName: t.name,
+                          templateLanguage: t.language ?? "en_US",
+                          templateParams: [],
+                        });
+                      } else {
+                        onChange({ templateName: "", templateLanguage: "en_US", templateParams: [] });
+                      }
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium outline-none focus:border-blue-500"
+                  >
+                    <option value="">Select an approved template</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.name} disabled={!t.is_usable}>
+                        {t.name} · {t.language} {t.is_usable ? "✓ Approved" : `(${t.status})`}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {selectedTemplate && (
+                <div className="space-y-4">
+                  {/* Template Details Badge */}
+                  <div className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600">
+                    <div>
+                      <span className="font-bold text-slate-800">{selectedTemplate.name}</span>
+                      <span className="ml-2 text-slate-400">({selectedTemplate.language})</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800">
+                      {selectedTemplate.status}
+                    </span>
+                  </div>
+
+                  {/* Header Variables */}
+                  {headerPlaceholders.length > 0 && (
+                    <div className="space-y-2">
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                        Header Variables
+                      </label>
+                      {headerPlaceholders.map((ph, idx) => (
+                        <div key={idx} className="space-y-1">
+                          <span className="text-[11px] font-medium text-slate-500">Parameter {`{{${ph}}}`}</span>
+                          <input
+                            type="text"
+                            value={getParamValue("header", idx)}
+                            onChange={(e) => setParamValue("header", headerPlaceholders.length, idx, e.target.value)}
+                            placeholder={`Value for {{${ph}}} or {{contact_name}}`}
+                            className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-xs outline-none focus:border-blue-500 bg-white"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Body Variables */}
+                  {bodyPlaceholders.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                          Body Variables ({bodyPlaceholders.length})
+                        </label>
+                        <span className="text-[10px] text-slate-400">Supports flow variables like {`{{contact_name}}`}</span>
+                      </div>
+                      {bodyPlaceholders.map((ph, idx) => (
+                        <div key={idx} className="space-y-1 p-2 bg-slate-50/50 rounded-xl border border-slate-200/60">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-slate-700">Variable {`{{${ph}}}`}</span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setParamValue("body", bodyPlaceholders.length, idx, "{{contact_name}}")}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 cursor-pointer"
+                              >
+                                + contact_name
+                              </button>
+                            </div>
+                          </div>
+                          <input
+                            type="text"
+                            value={getParamValue("body", idx)}
+                            onChange={(e) => setParamValue("body", bodyPlaceholders.length, idx, e.target.value)}
+                            placeholder={`e.g. John Doe, $99, or {{contact_name}}`}
+                            className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs outline-none focus:border-blue-500 bg-white"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* WhatsApp Live Preview Bubble */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      Live Template Preview
+                    </label>
+                    <div className="bg-[#efeae2] p-3 rounded-2xl border border-slate-200/80 shadow-inner">
+                      <div className="max-w-[320px] bg-white rounded-2xl rounded-tl-xs p-3 shadow-sm text-xs text-slate-800 space-y-2">
+                        {headerFormat !== "NONE" && headerFormat !== "TEXT" && (
+                          <div className="w-full h-24 bg-slate-100 border border-slate-200 rounded-lg flex flex-col items-center justify-center text-slate-400 text-xs font-semibold gap-1">
+                            <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            <span>{headerFormat} Header</span>
+                          </div>
+                        )}
+                        {headerFormat === "TEXT" && headerText && (
+                          <div className="font-bold text-slate-900 leading-tight">
+                            {renderPreviewText(headerText, headerPlaceholders, "header")}
+                          </div>
+                        )}
+                        {bodyText && (
+                          <div className="whitespace-pre-wrap leading-relaxed text-slate-700 text-xs">
+                            {renderPreviewText(bodyText, bodyPlaceholders, "body")}
+                          </div>
+                        )}
+                        {footerText && (
+                          <div className="text-[10px] text-slate-400 pt-1 border-t border-slate-100">
+                            {footerText}
+                          </div>
+                        )}
+                        {tplButtons.length > 0 && (
+                          <div className="space-y-1 pt-1 border-t border-slate-100">
+                            {tplButtons.map((btn: any, bIdx: number) => (
+                              <div
+                                key={bIdx}
+                                className="w-full py-1.5 text-center text-[11px] font-semibold text-[#00a884] bg-[#f0f2f5] rounded-lg border border-slate-200/60"
+                              >
+                                {btn.text || btn.title || "Button"}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* External API Node Configuration */}
         {messageType === "external_api" && (

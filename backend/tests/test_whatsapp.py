@@ -532,6 +532,41 @@ class ConnectTests(WhatsAppTestCase):
         self.assertEqual(response.json(), {"detail": "WhatsApp integration is not configured."})
         self.assertEqual(self.graph.requests, [])
 
+    def test_missing_graph_api_base_url_not_configured(self):
+        settings.meta_graph_api_base_url = ""
+        try:
+            response = self.connect(self.wa_a, access_token=GOOD_TOKEN)
+        finally:
+            settings.meta_graph_api_base_url = "https://graph.facebook.com"
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json(), {"detail": "WhatsApp integration is not configured."})
+        self.assertEqual(self.graph.requests, [])
+
+    def test_missing_asset_assignment_diagnosed_cleanly(self):
+        # When Meta Graph returns code 100 with cannot be loaded / missing permissions, it should be translated clearly
+        self.graph.wabas.clear()  # WABA query will return code 100 object load failure
+        response = self.connect(self.wa_a, access_token=GOOD_TOKEN)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("WhatsApp asset access denied", response.text)
+        self.assertIn("Assign Assets -> WhatsApp Accounts", response.text)
+        self.assert_no_secrets(response.text)
+
+    def test_config_meta_graph_api_url_and_server_defaults(self):
+        from app.core.config import Settings
+        custom = Settings(
+            database_url="postgresql+psycopg://test:test@localhost:5432/test",
+            redis_url="redis://localhost:6379/0",
+            jwt_secret="a" * 32,
+            meta_graph_api_url="https://graph.facebook.com",
+            whatsapp_access_token="test_server_token",
+            whatsapp_phone_number_id="111222333",
+            whatsapp_business_account_id="444555666",
+        )
+        self.assertEqual(custom.meta_graph_api_base_url, "https://graph.facebook.com")
+        self.assertEqual(custom.whatsapp_access_token.get_secret_value(), "test_server_token")
+        self.assertEqual(custom.whatsapp_phone_number_id, "111222333")
+        self.assertEqual(custom.whatsapp_business_account_id, "444555666")
+
     def test_failed_reconnect_keeps_connected_channel(self):
         self.assertEqual(self.connect(self.wa_a, access_token=GOOD_TOKEN).status_code, 200)
         before = self.reload(self.wa_a).access_token_encrypted

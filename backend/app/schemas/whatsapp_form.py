@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -15,7 +16,7 @@ class WhatsAppFormUpdate(BaseModel):
     config: dict | None = None
 
 class WhatsAppFormResponse(WhatsAppFormBase):
-    id: str
+    id: uuid.UUID | str
     status: str
     config: dict | None = None
     created_at: datetime
@@ -29,3 +30,31 @@ class WhatsAppFormListResponse(BaseModel):
     total: int
     page: int
     size: int
+
+class WhatsAppFormPublicResponse(BaseModel):
+    id: uuid.UUID | str
+    name: str
+    category: str | None = None
+    status: str
+    config: dict | None = None
+
+    class Config:
+        from_attributes = True
+
+class WhatsAppFormSubmissionCreate(BaseModel):
+    contact_phone: str | None = None
+    contact_name: str | None = None
+    data: dict
+
+class WhatsAppFormSubmissionResponse(BaseModel):
+    id: uuid.UUID | str
+    tenant_id: uuid.UUID | str
+    form_id: uuid.UUID | str
+    contact_phone: str | None = None
+    contact_name: str | None = None
+    data: dict
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+

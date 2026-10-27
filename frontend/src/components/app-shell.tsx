@@ -98,6 +98,13 @@ export function AppShell({ user, tenant, children }: AppShellProps) {
             </span>
           </div>
           <button className="logout-button !mt-1 !py-1.5 !text-[13px]" type="button" onClick={logout}>Sign out</button>
+          <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-center gap-2 text-[11px] text-slate-400">
+            <Link href="/privacy" target="_blank" className="hover:text-white transition-colors">Privacy</Link>
+            <span>•</span>
+            <Link href="/terms" target="_blank" className="hover:text-white transition-colors">Terms</Link>
+            <span>•</span>
+            <Link href="/data-deletion" target="_blank" className="hover:text-white transition-colors">Data Deletion</Link>
+          </div>
         </div>
       </aside>
 

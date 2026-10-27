@@ -144,6 +144,11 @@ export function buildInboxProxyTarget(
       "status" in body && INBOX_STATUSES.includes(body.status as (typeof INBOX_STATUSES)[number])) {
       return { backendPath: `/conversations/${id}/status`, query, kind: "json", body: body as Record<string, unknown> };
     }
+    if (segments[0] === "conversations" && segments[2] === "mode" && method === "POST" && params.size === 0 &&
+      body && typeof body === "object" && !Array.isArray(body) && Object.keys(body).length === 1 &&
+      "mode" in body && typeof (body as Record<string, unknown>).mode === "string" && ["chatbot", "human"].includes((body as Record<string, unknown>).mode as string)) {
+      return { backendPath: `/conversations/${id}/mode`, query, kind: "json", body: body as Record<string, unknown> };
+    }
     if (segments[0] === "conversations" && segments[2] === "messages" && method === "POST" && params.size === 0) {
       if (!body || typeof body !== "object" || Array.isArray(body)) return null;
       const input = body as Record<string, unknown>;

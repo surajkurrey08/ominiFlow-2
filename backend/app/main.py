@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -32,7 +34,10 @@ from app.api.flows import router as flows_router
 from app.api.routing_config import router as routing_config_router
 from app.api.payments import router as payments_router
 from app.api.admin import router as admin_router
+from app.api.social_posts import router as social_posts_router
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(
@@ -229,6 +234,11 @@ app.include_router(
     prefix="/api/v1",
 )
 
+app.include_router(
+    social_posts_router,
+    prefix="/api/v1",
+)
+
 # =========================
 # HEALTH CHECK
 # =========================
@@ -260,6 +270,58 @@ async def database_health():
 
 
 # =========================
+# CLICK-TO-CALL REDIRECT
+# =========================
+
+@app.get("/call", response_class=Response)
+def call_redirect(phone: str = ""):
+    raw = phone.strip()
+    digits = "".join(c for c in raw if c.isdigit() or c == "+")
+    if digits and not digits.startswith("+"):
+        if len(digits) == 10 and not digits.startswith("91"):
+            digits = f"+91{digits}"
+        else:
+            digits = f"+{digits}"
+    tel_uri = f"tel:{digits}" if digits else ""
+    btn_html = (
+        f'<a href="{tel_uri}" style="display:inline-block; margin-top:20px; background:#25D366; color:#ffffff; padding:14px 28px; border-radius:12px; text-decoration:none; font-weight:700; font-size:16px; box-shadow:0 4px 12px rgba(37,211,102,0.3);">📞 Tap to Call {digits}</a>'
+        if digits
+        else '<p style="color:#ef4444; font-weight:600;">No valid phone number provided.</p>'
+    )
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Connecting Call...</title>
+    <script>
+        if ("{tel_uri}") {{
+            window.location.href = "{tel_uri}";
+        }}
+    </script>
+</head>
+<body style="font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#f8fafc; color:#0f172a; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; padding:20px; box-sizing:border-box;">
+    <div style="background:#ffffff; max-width:420px; width:100%; padding:36px 28px; border-radius:24px; border:1px solid #e2e8f0; box-shadow:0 12px 32px rgba(0,0,0,0.06); text-align:center;">
+        <div style="width:68px; height:68px; border-radius:50%; background:#ecfdf5; border:1px solid #a7f3d0; color:#059669; font-size:30px; display:flex; align-items:center; justify-content:center; margin:0 auto 16px;">
+            📞
+        </div>
+        <h1 style="font-size:22px; font-weight:800; margin:0 0 8px; color:#0f172a;">Opening Phone Dialer...</h1>
+        <p style="font-size:14px; color:#64748b; margin:0 0 16px;">Connecting you directly with support & sales</p>
+        <div style="background:#f1f5f9; padding:10px 16px; border-radius:12px; font-family:monospace; font-size:18px; font-weight:700; color:#0f172a; letter-spacing:1px; display:inline-block;">
+            {digits or 'No number'}
+        </div>
+        <div>
+            {btn_html}
+        </div>
+        <p style="font-size:12px; color:#94a3b8; margin-top:20px;">If your dialer didn't open automatically, tap the green button above.</p>
+    </div>
+</body>
+</html>"""
+    return Response(content=html, media_type="text/html")
+
+
+
+# =========================
 # BACKGROUND WORKERS
 # =========================
 
@@ -283,6 +345,22 @@ def _whatsapp_worker_loop():
             campaigns.run_once(batch_size=50)
         except Exception:
             pass
+        try:
+            from app.workers import whatsapp_media
+            whatsapp_media.run_once(batch_size=20)
+        except Exception:
+            pass
+        try:
+            from app.workers import knowledge_base
+            knowledge_base.run_once(batch_size=10)
+        except Exception:
+            pass
+        try:
+            with SessionLocal() as db:
+                from app.services import social_post_service
+                social_post_service.process_scheduled_posts(db, limit=20)
+        except Exception:
+            pass
         time.sleep(2.0)
 
 
@@ -295,6 +373,10 @@ def start_whatsapp_worker():
 
 @app.on_event("startup")
 def ensure_default_platform_super_admin():
+    # The development convenience account has public example credentials.
+    # Production administrators must be provisioned explicitly.
+    if settings.is_production:
+        return
     from app.core.database import SessionLocal
     from app.models.user import User
     from app.core.security import hash_password
@@ -326,6 +408,11 @@ def ensure_default_platform_super_admin():
                 if updated:
                     db.commit()
                     logger.info("Platform super admin privileges ensured for: %s", admin_email)
+            try:
+                from app.db.seed_platform_templates import seed_default_platform_templates
+                seed_default_platform_templates(db)
+            except Exception as seed_exc:
+                logger.warning("Could not auto-seed platform templates: %s", seed_exc)
     except Exception as exc:
         logger.warning("Could not auto-seed platform super admin: %s", exc)
 

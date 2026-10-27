@@ -32,7 +32,7 @@ function redirectToLogin() {
   window.location.replace(`/login?reason=session-expired&next=${encodeURIComponent(destination)}`);
 }
 
-async function request<T>(path: string, options: { method?: "GET" | "POST"; body?: unknown } = {}): Promise<T> {
+async function request<T>(path: string, options: { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown } = {}): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`/api/templates${path}`, {
@@ -101,6 +101,26 @@ export function getTemplate(templateId: string) {
   return request<MessageTemplate>(`/${encodeURIComponent(templateId)}`);
 }
 
+export function deleteTemplate(templateId: string) {
+  return request<{ success: boolean; id: string; name: string }>(`/${encodeURIComponent(templateId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function updateTemplate(templateId: string, input: Partial<LocalTemplateInput>) {
+  return request<MessageTemplate>(`/${encodeURIComponent(templateId)}`, {
+    method: "PATCH",
+    body: input,
+  });
+}
+
+export interface TemplateButton {
+  type: "QUICK_REPLY" | "URL" | "PHONE_NUMBER";
+  text: string;
+  url?: string;
+  phone_number?: string;
+}
+
 export interface LocalTemplateInput {
   channel_connection_id: string;
   name: string;
@@ -110,7 +130,7 @@ export interface LocalTemplateInput {
   header_text?: string | null;
   body_text: string;
   footer_text?: string | null;
-  buttons?: string[];
+  buttons?: (string | TemplateButton)[];
 }
 
 export function createTemplate(input: LocalTemplateInput) {

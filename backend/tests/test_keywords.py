@@ -226,3 +226,33 @@ class KeywordTriggerTests(InboxTestCase):
         counts2 = flow_runner.process_pending(self.db, limit=10)
         self.assertEqual(counts2["delivered"], 0)
         self.assertEqual(len(self.send_api.requests), 1)
+
+    def test_chatbot_mode_vs_human_mode(self):
+        flow_id = self.make_flow("SupportFlow")
+        self.set_flow_text(flow_id, "Automated support reply")
+        self.make_keyword("help", match_type="contains", flow_id=flow_id)
+
+        # 1. Ingest message in default Chatbot mode -> triggers flow
+        self.ingest("help please", message_id="wamid.M1")
+        conv = self.db.query(Conversation).filter_by(tenant_id=self.tenant_a.id).first()
+        self.assertIsNotNone(conv)
+        self.assertEqual(len(self.triggers()), 1)
+
+        # 2. Switch conversation to Human mode via API
+        r = self.client.post(f"/api/v1/conversations/{conv.id}/mode", headers=self.head(), json={"mode": "human"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["mode"], "human")
+
+        # Ingest new message while in Human mode -> automation MUST be skipped
+        self.ingest("help again", message_id="wamid.M2")
+        self.assertEqual(len(self.triggers()), 1)  # No new trigger created!
+
+        # 3. Switch back to Chatbot mode via API
+        r = self.client.post(f"/api/v1/conversations/{conv.id}/mode", headers=self.head(), json={"mode": "chatbot"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["mode"], "chatbot")
+
+        # Ingest new message while in Chatbot mode -> triggers flow again
+        self.ingest("help again 2", message_id="wamid.M3")
+        self.assertEqual(len(self.triggers()), 2)
+

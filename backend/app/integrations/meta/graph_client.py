@@ -36,14 +36,20 @@ class MetaGraphError(Exception):
         message: str,
         status_code: int | None = None,
         code: int | None = None,
+        error_subcode: int | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.code = code
+        self.error_subcode = error_subcode
 
 
 class MetaGraphUnavailableError(MetaGraphError):
     """Network failure, timeout or 5xx from the Graph API."""
+
+
+class MetaGraphConfigurationError(MetaGraphError):
+    """Raised when Meta Graph API base URL, version, or app credentials are missing."""
 
 
 class MetaPayloadTooLargeError(MetaGraphError):
@@ -98,6 +104,13 @@ class MetaGraphClient:
         timeout: float,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
+        if not base_url or not base_url.strip():
+            raise MetaGraphConfigurationError("Meta Graph API base URL is missing or empty.")
+        if not api_version or not api_version.strip():
+            raise MetaGraphConfigurationError("Meta Graph API version is missing or empty.")
+        if not app_id or not app_secret:
+            raise MetaGraphConfigurationError("Meta App ID or App Secret is missing.")
+
         self.app_id = app_id
         self._app_secret = app_secret
         self._base = f"{base_url.rstrip('/')}/{api_version}"
@@ -154,7 +167,7 @@ class MetaGraphClient:
             response = self._http.request(
                 method,
                 f"{self._base}/{path.lstrip('/')}",
-                params=query,
+                params=query if query else None,
                 data=data,
                 json=json,
                 files=files,
@@ -181,13 +194,78 @@ class MetaGraphClient:
 
         if response.status_code >= 400 or error:
             error = error if isinstance(error, dict) else {}
+            code = error.get("code")
+            error_subcode = error.get("error_subcode")
+            raw_msg = str(error.get("message") or "Meta Graph API request failed.")
+            sanitized_msg = sanitize(raw_msg, all_secrets)
+            lower_msg = raw_msg.lower()
+
+            # Provide clear, actionable diagnostics for common Meta Graph errors
+            if code == 100 and (
+                error_subcode == 33
+                or "missing permissions" in lower_msg
+                or "cannot be loaded" in lower_msg
+                or "does not exist" in lower_msg
+            ):
+                diagnosed_msg = (
+                    f"{sanitized_msg} (WhatsApp asset access denied. Either the WABA/Phone Number ID is incorrect, or in Meta Business "
+                    "Settings the System User has not been granted asset access under Users -> System Users -> [User] -> Assign Assets -> WhatsApp Accounts.)"
+                )
+            elif (code == 2494064 or error_subcode == 2494064 or "already registered" in lower_msg):
+                diagnosed_msg = (
+                    f"{sanitized_msg} (Phone number is already registered with WhatsApp. To keep using the mobile WhatsApp Business app, "
+                    "connect using 'Existing WhatsApp Business App (Coexistence)' onboarding. If you wish to migrate to dedicated Cloud API instead, "
+                    "you must first delete/deregister the account from your WhatsApp mobile app settings.)"
+                )
+            elif (code == 1690130 or error_subcode == 1690130):
+                diagnosed_msg = (
+                    f"{sanitized_msg} (Meta business asset pairing conflict during onboarding [Error #1690130]. Ensure your Meta App has completed "
+                    "the Tech Provider onboarding wizard in the App Dashboard and that your Business Portfolio admin has granted WABA access.)"
+                )
+            elif (code == 131031 or error_subcode == 131031):
+                diagnosed_msg = (
+                    f"{sanitized_msg} (Phone number is not eligible for WhatsApp Cloud API. Ensure the number is active on WhatsApp Business app v2.24.17+ "
+                    "and has valid Business Portfolio admin authorization.)"
+                )
+            elif code == 190:
+                if error_subcode == 463 or "expired" in lower_msg:
+                    diagnosed_msg = (
+                        f"{sanitized_msg} (Meta access token has expired [Error 190/463]. For uninterrupted 24/7 SaaS operation, "
+                        "generate a permanent System User token in Meta Business Settings rather than a temporary user token.)"
+                    )
+                elif error_subcode in (460, 467) or "revoked" in lower_msg or "logged out" in lower_msg:
+                    diagnosed_msg = (
+                        f"{sanitized_msg} (Meta access token has been revoked or invalidated by Meta [Error 190]. "
+                        "Please generate a new System User access token in Meta Business Settings.)"
+                    )
+                elif error_subcode == 458 or "app uninstalled" in lower_msg:
+                    diagnosed_msg = (
+                        f"{sanitized_msg} (Meta App has been uninstalled or disconnected from the Meta Business account [Error 190/458].)"
+                    )
+                else:
+                    diagnosed_msg = (
+                        f"{sanitized_msg} (Meta access token is invalid or malformed. Ensure the complete token was copied.)"
+                    )
+            elif code in (10, 200) or ("permission" in lower_msg and "missing permissions" not in lower_msg):
+                diagnosed_msg = (
+                    f"{sanitized_msg} (Insufficient Meta permissions. Ensure the System User has been granted 'whatsapp_business_management' "
+                    "and 'whatsapp_business_messaging' permissions.)"
+                )
+            elif code in (4, 17, 32, 613):
+                raise MetaGraphUnavailableError(
+                    f"{sanitized_msg} (Meta API rate limit reached. Please wait a moment and try again.)",
+                    status_code=response.status_code,
+                    code=code,
+                    error_subcode=error_subcode,
+                )
+            else:
+                diagnosed_msg = sanitized_msg
+
             raise MetaGraphError(
-                sanitize(
-                    str(error.get("message") or "Meta Graph API request failed."),
-                    all_secrets,
-                ),
+                diagnosed_msg,
                 status_code=response.status_code,
-                code=error.get("code"),
+                code=code,
+                error_subcode=error_subcode,
             )
 
         if not isinstance(body, dict):
@@ -325,12 +403,30 @@ class MetaGraphClient:
 
 
 def is_meta_configured() -> bool:
-    return bool(settings.meta_app_id and settings.meta_app_secret)
+    return bool(
+        settings.meta_app_id
+        and settings.meta_app_secret
+        and settings.meta_graph_api_base_url
+        and settings.meta_graph_api_version
+    )
 
 
 def build_graph_client(
     transport: httpx.BaseTransport | None = None,
 ) -> MetaGraphClient:
+    if not is_meta_configured():
+        missing_parts: list[str] = []
+        if not settings.meta_app_id:
+            missing_parts.append("META_APP_ID")
+        if not settings.meta_app_secret:
+            missing_parts.append("META_APP_SECRET")
+        if not settings.meta_graph_api_base_url:
+            missing_parts.append("META_GRAPH_API_URL/META_GRAPH_API_BASE_URL")
+        if not settings.meta_graph_api_version:
+            missing_parts.append("META_GRAPH_API_VERSION")
+        raise MetaGraphConfigurationError(
+            f"Meta Graph API configuration is missing: {', '.join(missing_parts)}."
+        )
     return MetaGraphClient(
         app_id=settings.meta_app_id,
         app_secret=settings.meta_app_secret,

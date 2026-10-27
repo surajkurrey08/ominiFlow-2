@@ -231,3 +231,37 @@ export function listChannelTemplates(channelId: string, params: TemplateListPara
 export function syncChannelTemplates(channelId: string) {
   return request<TemplateSyncResult>(`/${encodeURIComponent(channelId)}/templates/sync`, { method: "POST" });
 }
+
+export interface WhatsAppBusinessProfile {
+  about?: string | null;
+  address?: string | null;
+  description?: string | null;
+  email?: string | null;
+  profile_picture_url?: string | null;
+  websites?: string[];
+  vertical?: string | null;
+}
+
+export interface WhatsAppBusinessProfileUpdateInput {
+  about?: string;
+  address?: string;
+  description?: string;
+  email?: string;
+  websites?: string[];
+  vertical?: string;
+  profile_picture_base64?: string;
+  profile_picture_mime?: string;
+  profile_picture_filename?: string;
+}
+
+export function getWhatsAppBusinessProfile(channelId: string) {
+  return request<WhatsAppBusinessProfile>(`/${encodeURIComponent(channelId)}/whatsapp/profile`);
+}
+
+export function updateWhatsAppBusinessProfile(channelId: string, data: WhatsAppBusinessProfileUpdateInput) {
+  return request<WhatsAppBusinessProfile>(`/${encodeURIComponent(channelId)}/whatsapp/profile`, {
+    method: "POST",
+    body: data as unknown as Record<string, unknown>,
+  });
+}
+

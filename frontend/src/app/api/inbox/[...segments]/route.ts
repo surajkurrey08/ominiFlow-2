@@ -39,7 +39,7 @@ async function handle(request: NextRequest, context: RouteContext, method: "GET"
 
   const { segments } = await context.params;
   let body: unknown;
-  if (method === "POST" && ["messages", "assign", "status"].includes(segments.at(-1) ?? "")) {
+  if (method === "POST" && ["messages", "assign", "status", "mode"].includes(segments.at(-1) ?? "")) {
     body = await request.json().catch(() => null);
   }
   const target = buildInboxProxyTarget(method, segments, request.nextUrl.searchParams, body);

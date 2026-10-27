@@ -49,3 +49,26 @@ class WhatsAppEmbeddedSignupConfig(BaseModel):
     app_id: str = Field(pattern=META_ID_PATTERN)
     config_id: str = Field(min_length=1, max_length=100)
     graph_api_version: str = Field(pattern=r"^v[0-9]{1,3}\.[0-9]{1,2}$")
+
+
+class WhatsAppBusinessProfile(BaseModel):
+    about: str | None = None
+    address: str | None = None
+    description: str | None = None
+    email: str | None = None
+    profile_picture_url: str | None = None
+    websites: list[str] = Field(default_factory=list)
+    vertical: str | None = None
+
+
+class WhatsAppBusinessProfileUpdateRequest(BaseModel):
+    about: str | None = Field(default=None, max_length=139)
+    address: str | None = Field(default=None, max_length=256)
+    description: str | None = Field(default=None, max_length=512)
+    email: str | None = Field(default=None, max_length=128)
+    websites: list[str] = Field(default_factory=list)
+    vertical: str | None = None
+    profile_picture_base64: str | None = None
+    profile_picture_mime: str | None = Field(default="image/jpeg")
+    profile_picture_filename: str | None = Field(default="profile.jpg")
+

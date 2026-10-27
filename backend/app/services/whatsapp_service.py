@@ -23,6 +23,8 @@ from sqlalchemy.orm import Session
 
 from sqlalchemy import func
 
+from app.core.config import settings
+
 from app.integrations.base import (
     ProviderCredentials,
     ProviderNotConfiguredError,
@@ -598,3 +600,82 @@ def handle_webhook(db: Session, payload: Any) -> WebhookResult:
     )
 
     return result
+
+
+# =========================
+# BUSINESS PROFILE MANAGEMENT
+# =========================
+
+def get_whatsapp_business_profile(
+    db: Session,
+    tenant_id: uuid.UUID,
+    channel_id: uuid.UUID,
+) -> dict[str, Any]:
+    """Fetch live WhatsApp Business Profile from Meta Cloud API."""
+    channel = _load_channel(db, tenant_id, channel_id)
+    if channel.channel_type != ChannelType.WHATSAPP:
+        raise NotWhatsAppChannelError("Channel is not a WhatsApp channel.")
+    if channel.status != ChannelStatus.CONNECTED or not channel.access_token_encrypted or not channel.external_account_id:
+        raise WhatsAppVerificationFailedError("Channel is not connected to WhatsApp.")
+
+    provider = _provider()
+    token = get_credential_service().decrypt(channel.access_token_encrypted)
+    credentials = ProviderCredentials(access_token=token)
+
+    return provider.get_business_profile(credentials, channel.external_account_id)
+
+
+def update_whatsapp_business_profile(
+    db: Session,
+    tenant_id: uuid.UUID,
+    channel_id: uuid.UUID,
+    data: Any,
+) -> dict[str, Any]:
+    """
+    Update WhatsApp Business Profile details (text fields and/or profile photo)
+    live on Meta Cloud API so customers immediately see it on their mobile WhatsApp.
+    """
+    channel = _load_channel(db, tenant_id, channel_id)
+    if channel.channel_type != ChannelType.WHATSAPP:
+        raise NotWhatsAppChannelError("Channel is not a WhatsApp channel.")
+    if channel.status != ChannelStatus.CONNECTED or not channel.access_token_encrypted or not channel.external_account_id:
+        raise WhatsAppVerificationFailedError("Channel is not connected to WhatsApp.")
+
+    provider = _provider()
+    token = get_credential_service().decrypt(channel.access_token_encrypted)
+    credentials = ProviderCredentials(access_token=token)
+
+    # 1. If profile photo base64 is provided, upload it via Meta Resumable Upload
+    photo_b64 = getattr(data, "profile_picture_base64", None)
+    if photo_b64:
+        import base64
+        if "," in photo_b64:
+            photo_b64 = photo_b64.split(",", 1)[1]
+        try:
+            image_bytes = base64.b64decode(photo_b64)
+            mime = getattr(data, "profile_picture_mime", "image/jpeg") or "image/jpeg"
+            filename = getattr(data, "profile_picture_filename", "profile.jpg") or "profile.jpg"
+            provider.upload_profile_picture(
+                credentials,
+                channel.external_account_id,
+                image_bytes,
+                mime_type=mime,
+                filename=filename,
+            )
+        except Exception as exc:
+            logger.warning("Failed to upload WhatsApp profile photo: %s", exc)
+            raise WhatsAppVerificationFailedError(f"Profile photo upload failed: {exc}") from None
+
+    # 2. Update text fields (about, address, description, email, vertical, websites)
+    payload: dict[str, Any] = {}
+    for field in ("about", "address", "description", "email", "vertical", "websites"):
+        val = getattr(data, field, None)
+        if val is not None:
+            payload[field] = val
+
+    if payload:
+        provider.update_business_profile(credentials, channel.external_account_id, payload)
+
+    # 3. Return fresh live profile from Meta
+    return provider.get_business_profile(credentials, channel.external_account_id)
+

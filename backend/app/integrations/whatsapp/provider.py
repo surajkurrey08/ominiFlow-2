@@ -37,6 +37,7 @@ from app.integrations.base import (
 )
 from app.integrations.meta.graph_client import (
     MetaGraphClient,
+    MetaGraphConfigurationError,
     MetaGraphError,
     MetaGraphUnavailableError,
     MetaPayloadTooLargeError,
@@ -88,6 +89,8 @@ class WhatsAppProvider(ChannelProvider):
             raise ProviderUnavailableError(
                 "Could not reach WhatsApp. Please try again later."
             ) from None
+        except MetaGraphConfigurationError as exc:
+            raise ProviderNotConfiguredError(str(exc)) from None
         except MetaGraphError as exc:
             raise ProviderVerificationError(f"{failure} {exc}".strip()) from None
 
@@ -166,6 +169,14 @@ class WhatsAppProvider(ChannelProvider):
                                     params={"fields": "id,name", "limit": 10},
                                 )
                                 waba_items = wabas.get("data") or []
+                                if not waba_items:
+                                    client_wabas = client.request(
+                                        "GET",
+                                        f"{biz_id}/client_whatsapp_business_accounts",
+                                        access_token=credentials.access_token,
+                                        params={"fields": "id,name", "limit": 10},
+                                    )
+                                    waba_items = client_wabas.get("data") or []
                                 if waba_items:
                                     resolved_waba_id = str(waba_items[0].get("id"))
                                     break
@@ -211,6 +222,23 @@ class WhatsAppProvider(ChannelProvider):
         )
 
         if data.get("is_valid") is not True:
+            err = data.get("error") if isinstance(data.get("error"), dict) else {}
+            subcode = err.get("subcode")
+            err_msg = str(err.get("message") or "")
+            lower_msg = err_msg.lower()
+            if subcode == 463 or "expired" in lower_msg:
+                raise ProviderVerificationError(
+                    "Meta access token has expired (Error 190/463). System User tokens do not expire; "
+                    "please ensure you generated a System User token rather than a temporary user token."
+                )
+            if subcode in (460, 467) or "revoked" in lower_msg or "logged out" in lower_msg:
+                raise ProviderVerificationError(
+                    "Meta access token has been revoked or invalidated by Meta. Please generate a new System User token in Meta Business Settings."
+                )
+            if subcode == 458 or "app uninstalled" in lower_msg:
+                raise ProviderVerificationError(
+                    "Meta App was uninstalled or disconnected from the Meta Business account."
+                )
             raise ProviderVerificationError("Access token is invalid or expired.")
 
         if str(data.get("app_id")) != client.app_id:
@@ -258,6 +286,14 @@ class WhatsAppProvider(ChannelProvider):
         Verify token validity, WABA access and phone number ownership.
         Returns the account info and credentials annotated with expiry.
         """
+        if not phone_number_id or not phone_number_id.isdigit():
+            raise ProviderVerificationError(
+                f"Invalid Phone Number ID '{phone_number_id}'. Phone Number ID must be a numeric Meta ID, not a raw phone number."
+            )
+        if not waba_id or not waba_id.isdigit():
+            raise ProviderVerificationError(
+                f"Invalid WhatsApp Business Account ID '{waba_id}'. WABA ID must be a numeric Meta ID."
+            )
 
         with self._client() as client:
             verified = self.inspect_token(client, credentials, waba_id)
@@ -626,10 +662,35 @@ class WhatsAppProvider(ChannelProvider):
                 return f"https://{u}"
             return u
 
+        def _format_phone(raw: Any) -> str:
+            phone_str = str(raw or "").strip()
+            digits = "".join(c for c in phone_str if c.isdigit() or c == "+")
+            if not digits:
+                return ""
+            if not digits.startswith("+"):
+                if len(digits) == 10 and not digits.startswith("91"):
+                    return f"+91{digits}"
+                return f"+{digits}"
+            return digits
+
+        def _get_call_bridge_url(digits: str) -> str:
+            from urllib.parse import quote, urlparse
+            from app.core.config import settings
+
+            base = settings.frontend_url.rstrip("/") if hasattr(settings, "frontend_url") and settings.frontend_url else "http://localhost:3000"
+            if ("localhost" in base or "127.0.0.1" in base) and getattr(settings, "meta_oauth_redirect_uri", None):
+                parsed = urlparse(settings.meta_oauth_redirect_uri)
+                if parsed.scheme in ("http", "https") and parsed.netloc and "localhost" not in parsed.netloc:
+                    base = f"{parsed.scheme}://{parsed.netloc}"
+            return f"{base}/call?phone={quote(digits)}"
 
         if reply_buttons:
             extra_urls = [f"🔗 {b['title']}: {_clean_url(str(b['url']))}" for b in url_buttons if b.get("url")]
-            extra_calls = [f"📞 {b['title']}: {b.get('phone_number') or b.get('phoneNumber')}" for b in call_buttons if b.get("phone_number") or b.get("phoneNumber")]
+            extra_calls = [
+                f"📞 {b['title']}: {_format_phone(b.get('phone_number') or b.get('phoneNumber'))}"
+                for b in call_buttons
+                if (b.get("phone_number") or b.get("phoneNumber"))
+            ]
             lines = extra_urls + extra_calls
             body_text = body + ("\n\n" + "\n".join(lines) if lines else "")
             interactive: dict[str, Any] = {
@@ -646,7 +707,11 @@ class WhatsAppProvider(ChannelProvider):
             primary = url_buttons[0]
             clean_primary_url = _clean_url(str(primary.get("url") or ""))
             extra_urls = [f"🔗 {b['title']}: {_clean_url(str(b['url']))}" for b in url_buttons[1:] if b.get("url")]
-            extra_calls = [f"📞 {b['title']}: {b.get('phone_number') or b.get('phoneNumber')}" for b in call_buttons if b.get("phone_number") or b.get("phoneNumber")]
+            extra_calls = [
+                f"📞 {b['title']}: {_format_phone(b.get('phone_number') or b.get('phoneNumber'))}"
+                for b in call_buttons
+                if (b.get("phone_number") or b.get("phoneNumber"))
+            ]
             lines = extra_urls + extra_calls
             body_text = body + ("\n\n" + "\n".join(lines) if lines else "")
             interactive = {
@@ -659,16 +724,16 @@ class WhatsAppProvider(ChannelProvider):
             }
         elif call_buttons:
             primary = call_buttons[0]
-            raw_phone = str(primary.get("phone_number") or primary.get("phoneNumber") or "").strip()
-            digits_and_plus = "".join(c for c in raw_phone if c.isdigit() or c == "+")
-            if not digits_and_plus.startswith("+"):
-                if len(digits_and_plus) == 10 and not digits_and_plus.startswith("91"):
-                    digits_and_plus = f"+91{digits_and_plus}"
-                else:
-                    digits_and_plus = f"+{digits_and_plus}"
-            clean_tel = f"tel:{digits_and_plus}"
-            extra_calls = [f"📞 {b['title']}: {b.get('phone_number') or b.get('phoneNumber')}" for b in call_buttons[1:] if b.get("phone_number") or b.get("phoneNumber")]
-            body_text = body + ("\n\n" + "\n".join(extra_calls) if extra_calls else "")
+            phone_num = _format_phone(primary.get("phone_number") or primary.get("phoneNumber"))
+            call_url = _get_call_bridge_url(phone_num)
+            extra_calls = [
+                f"📞 {b['title']}: {_format_phone(b.get('phone_number') or b.get('phoneNumber'))}"
+                for b in call_buttons[1:]
+                if (b.get("phone_number") or b.get("phoneNumber"))
+            ]
+            primary_text = f"📞 {primary.get('title') or 'Call us'}: {phone_num}" if phone_num else ""
+            call_lines = ([primary_text] if primary_text else []) + extra_calls
+            body_text = body + ("\n\n" + "\n".join(call_lines) if call_lines else "")
             interactive = {
                 "type": "cta_url",
                 "body": {"text": body_text[:1024]},
@@ -676,12 +741,16 @@ class WhatsAppProvider(ChannelProvider):
                     "name": "cta_url",
                     "parameters": {
                         "display_text": str(primary.get("title") or "Call us")[:20],
-                        "url": clean_tel,
+                        "url": call_url,
                     },
                 },
             }
         else:
-            lines = [f"📞 {b['title']}: {b.get('phone_number') or b.get('phoneNumber')}" for b in call_buttons if b.get("phone_number") or b.get("phoneNumber")]
+            lines = [
+                f"📞 {b['title']}: {_format_phone(b.get('phone_number') or b.get('phoneNumber'))}"
+                for b in call_buttons
+                if (b.get("phone_number") or b.get("phoneNumber"))
+            ]
             parts = []
             if header and header.get("type") == "text" and header.get("text"):
                 parts.append(f"*{header['text']}*")
@@ -882,6 +951,23 @@ class WhatsAppProvider(ChannelProvider):
                 )
             )
 
+    def delete_template(
+        self,
+        credentials: ProviderCredentials,
+        waba_id: str,
+        template_name: str,
+    ) -> dict[str, Any]:
+        """Delete one message template by name from the selected WABA."""
+        with self._client() as client:
+            return self._graph(
+                lambda: client.request(
+                    "DELETE",
+                    f"{waba_id}/message_templates",
+                    access_token=credentials.access_token,
+                    params={"name": template_name},
+                )
+            )
+
     # ---------- ChannelProvider interface ----------
 
     def connect(
@@ -970,3 +1056,124 @@ class WhatsAppProvider(ChannelProvider):
                 "quality_rating": phone.get("quality_rating"),
             },
         )
+
+    # ---------- WhatsApp Business Profile operations ----------
+
+    def get_business_profile(
+        self,
+        credentials: ProviderCredentials,
+        phone_number_id: str,
+    ) -> dict[str, Any]:
+        """Fetch the public WhatsApp Business Profile from Meta Cloud API."""
+        with self._client() as client:
+            res = self._call(
+                lambda: client.request(
+                    "GET",
+                    f"{phone_number_id}/whatsapp_business_profile",
+                    access_token=credentials.access_token,
+                    params={
+                        "fields": "about,address,description,email,profile_picture_url,websites,vertical"
+                    },
+                ),
+                "Failed to fetch WhatsApp business profile.",
+            )
+
+        data = res.get("data")
+        if data and isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
+            return data[0]
+        return {}
+
+    def update_business_profile(
+        self,
+        credentials: ProviderCredentials,
+        phone_number_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Update WhatsApp Business Profile text fields (about, address, description, email, vertical, websites)."""
+        body: dict[str, Any] = {"messaging_product": "whatsapp"}
+        for k in ("about", "address", "description", "email", "vertical", "websites"):
+            if k in payload and payload[k] is not None:
+                body[k] = payload[k]
+
+        with self._client() as client:
+            return self._call(
+                lambda: client.request(
+                    "POST",
+                    f"{phone_number_id}/whatsapp_business_profile",
+                    access_token=credentials.access_token,
+                    json=body,
+                ),
+                "Failed to update WhatsApp business profile.",
+            )
+
+    def upload_profile_picture(
+        self,
+        credentials: ProviderCredentials,
+        phone_number_id: str,
+        image_bytes: bytes,
+        mime_type: str = "image/jpeg",
+        filename: str = "profile.jpg",
+    ) -> str:
+        """
+        Uploads an image via Meta Resumable Upload API to obtain a file handle
+        and assigns it to the WhatsApp Business Profile picture.
+        """
+        file_len = len(image_bytes)
+        if file_len > 5 * 1024 * 1024:
+            raise ProviderError("Profile picture size must not exceed 5 MB.")
+
+        with self._client() as client:
+            # 1. Initiate upload session
+            init_res = self._call(
+                lambda: client.request(
+                    "POST",
+                    f"{client.app_id}/uploads",
+                    access_token=credentials.access_token,
+                    params={
+                        "file_length": str(file_len),
+                        "file_type": mime_type,
+                        "file_name": filename,
+                    },
+                ),
+                "Failed to initiate profile photo upload with Meta.",
+            )
+            upload_session_id = init_res.get("id")
+            if not upload_session_id or not isinstance(upload_session_id, str):
+                raise ProviderError("Meta did not return an upload session ID.")
+
+            # 2. Upload binary content to the session
+            clean_session_path = upload_session_id.lstrip("/")
+            upload_res = self._call(
+                lambda: client.request(
+                    "POST",
+                    clean_session_path,
+                    access_token=credentials.access_token,
+                    authorization_scheme="OAuth",
+                    with_proof=False,
+                    content=image_bytes,
+                    request_headers={
+                        "file_offset": "0",
+                        "Content-Type": "application/octet-stream",
+                    },
+                ),
+                "Failed to upload profile photo binary to Meta.",
+            )
+            file_handle = upload_res.get("h")
+            if not file_handle or not isinstance(file_handle, str):
+                raise ProviderError("Meta did not return a valid file handle for the profile picture.")
+
+            # 3. Assign handle to the WhatsApp Business profile
+            self._call(
+                lambda: client.request(
+                    "POST",
+                    f"{phone_number_id}/whatsapp_business_profile",
+                    access_token=credentials.access_token,
+                    json={
+                        "messaging_product": "whatsapp",
+                        "profile_picture_handle": file_handle,
+                    },
+                ),
+                "Failed to apply profile picture handle to WhatsApp Business Profile.",
+            )
+            return file_handle
+

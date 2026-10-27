@@ -53,6 +53,15 @@ class PlatformTemplateProviderError(PlatformTemplateError):
     pass
 
 
+def normalize_meta_category(category: str) -> str:
+    cat = (category or "").strip().lower()
+    if cat in ("orders", "payments", "appointments", "support", "utility"):
+        return "UTILITY"
+    if cat in ("authentication", "otp"):
+        return "AUTHENTICATION"
+    return "MARKETING"
+
+
 def list_library(db: Session, *, include_inactive: bool = False) -> PlatformTemplateListResponse:
     query = select(PlatformTemplate)
     if not include_inactive:
@@ -167,6 +176,7 @@ def submit_for_tenant(
             "WhatsApp credentials are unavailable. Reconnect this channel."
         ) from None
 
+
     components = [{
         "type": "BODY",
         "text": data.body_text,
@@ -175,10 +185,11 @@ def submit_for_tenant(
             if template_placeholders else {}
         ),
     }]
+    meta_cat = normalize_meta_category(platform_template.category)
     payload = {
         "name": platform_template.name,
         "language": platform_template.language,
-        "category": platform_template.category.upper(),
+        "category": meta_cat,
         "components": components,
     }
     if existing is None:
@@ -187,10 +198,10 @@ def submit_for_tenant(
             channel_connection_id=channel.id,
             name=platform_template.name,
             language=platform_template.language,
-            category=platform_template.category,
+            category=meta_cat.lower(),
             status="submitting",
             components=components,
-            template_metadata={"platform_template_id": str(platform_template.id)},
+            template_metadata={"platform_template_id": str(platform_template.id), "library_category": platform_template.category},
             is_active=True,
         )
         db.add(existing)

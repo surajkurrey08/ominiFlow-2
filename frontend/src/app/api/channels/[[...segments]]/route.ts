@@ -73,7 +73,7 @@ async function handle(request: NextRequest, context: RouteContext, method: Proxy
     // Backend details for these codes are sanitized and user-facing.
     const detail = isRecord(payload) && typeof payload.detail === "string" ? payload.detail : null;
     const status = friendlyStatus(upstream.status);
-    const error = status === 401 ? "Your session has expired. Sign in again." : detail ?? GENERIC_ERROR;
+    const error = status === 401 ? "Your Omniflow web session has expired. Please sign in again." : detail ?? GENERIC_ERROR;
     const response = NextResponse.json({ error }, { status });
     return upstream.status === 401 ? clearSession(response) : response;
   }

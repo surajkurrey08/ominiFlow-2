@@ -30,6 +30,7 @@ export interface Conversation {
     text: string | null;
     created_at: string;
   } | null;
+  mode?: "chatbot" | "human";
 }
 
 export interface ConversationListParams {

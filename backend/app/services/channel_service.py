@@ -57,6 +57,8 @@ def _escape_like(value: str) -> str:
 
 
 def _to_response(channel: ChannelConnection) -> ChannelConnectionResponse:
+    meta = channel.provider_metadata or {}
+    display_phone = meta.get("display_phone_number")
     return ChannelConnectionResponse(
         id=channel.id,
         name=channel.name,
@@ -64,6 +66,8 @@ def _to_response(channel: ChannelConnection) -> ChannelConnectionResponse:
         status=channel.status,
         external_account_id=channel.external_account_id,
         external_business_id=channel.external_business_id,
+        display_phone_number=display_phone,
+        provider_metadata=channel.provider_metadata,
         has_credentials=channel.access_token_encrypted is not None,
         token_expires_at=channel.token_expires_at,
         is_active=channel.is_active,

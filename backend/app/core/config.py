@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,7 +24,8 @@ class Settings(BaseSettings):
 
     jwt_secret: str
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 10080
+    access_token_expire_minutes: int = 43200  # 30 days token lifespan
+    session_inactivity_timeout_hours: int = 24  # Session expires only after 24 hours of inactivity
 
     invitation_expire_hours: int = 72
     password_reset_expire_minutes: int = 60
@@ -59,10 +60,52 @@ class Settings(BaseSettings):
     # Meta (WhatsApp Cloud API / Graph API)
     meta_app_id: str = ""
     meta_app_secret: str = ""
-    meta_graph_api_base_url: str = "https://graph.facebook.com"
-    meta_graph_api_version: str = "v23.0"
+    meta_graph_api_base_url: str = Field(
+        default="https://graph.facebook.com",
+        validation_alias=AliasChoices("meta_graph_api_base_url", "meta_graph_api_url"),
+    )
+    meta_graph_api_version: str = Field(
+        default="v21.0",
+        validation_alias=AliasChoices("meta_graph_api_version"),
+    )
     meta_http_timeout_seconds: float = 10.0
     meta_embedded_signup_config_id: str = ""
+
+    # Optional server-level default WhatsApp credentials (multi-tenant override per channel)
+    whatsapp_access_token: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("whatsapp_access_token"),
+    )
+    whatsapp_phone_number_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("whatsapp_phone_number_id"),
+    )
+    whatsapp_business_account_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("whatsapp_business_account_id", "whatsapp_waba_id"),
+    )
+
+    @field_validator("meta_graph_api_base_url")
+    @classmethod
+    def _normalize_meta_graph_url(cls, v: str) -> str:
+        url = (v or "").strip().rstrip("/")
+        if not url:
+            return "https://graph.facebook.com"
+        if not (url.startswith("https://") or url.startswith("http://")):
+            url = f"https://{url}"
+        return url
+
+    @field_validator("meta_graph_api_version")
+    @classmethod
+    def _normalize_meta_graph_version(cls, v: str) -> str:
+        ver = (v or "").strip().lstrip("/")
+        if not ver:
+            return "v21.0"
+        if not ver.startswith("v"):
+            ver = f"v{ver}"
+        if ver.lower() in ("v26.0", "v26", "v25.0", "v25", "v24.0", "v24", "v23.0"):
+            return "v21.0"
+        return ver
 
     # Shared secret for the WhatsApp webhook verification (GET) handshake.
     whatsapp_webhook_verify_token: str = ""

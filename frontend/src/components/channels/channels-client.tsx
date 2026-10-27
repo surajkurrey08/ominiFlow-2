@@ -20,6 +20,9 @@ import {
   testFacebookConnection,
   testInstagramConnection,
   testWhatsAppConnection,
+  getWhatsAppBusinessProfile,
+  updateWhatsAppBusinessProfile,
+  type WhatsAppBusinessProfile,
   type ChannelConnection,
   type ChannelStatus,
   type ConnectionCheck,
@@ -86,13 +89,28 @@ function ensureFacebookSdk(appId: string, version: string): Promise<NonNullable<
   });
 }
 
-function runEmbeddedSignup(configId: string, sdk: NonNullable<Window["FB"]>): Promise<EmbeddedSignupResult> {
+interface EmbeddedSignupOptions {
+  mode?: "coexistence" | "standard";
+  phone?: {
+    countryCode?: string;
+    nationalNumber?: string;
+  };
+}
+
+function runEmbeddedSignup(
+  configId: string,
+  sdk: NonNullable<Window["FB"]>,
+  options?: EmbeddedSignupOptions,
+): Promise<EmbeddedSignupResult> {
   return new Promise((resolve, reject) => {
     let code: string | null = null;
     let assets: { phone_number_id?: string; waba_id?: string } | null = null;
     let settled = false;
     let fallbackTimer: number | null = null;
-    const timeout = window.setTimeout(() => finish(new Error("WhatsApp setup timed out. Start again.")), 180000);
+    const timeout = window.setTimeout(
+      () => finish(new Error("WhatsApp setup timed out. Please try again.")),
+      180000,
+    );
 
     function finish(error?: Error) {
       if (settled) return;
@@ -138,52 +156,146 @@ function runEmbeddedSignup(configId: string, sdk: NonNullable<Window["FB"]>): Pr
         }
       }
       if (!payload || typeof payload !== "object") return;
-      const message = payload as { type?: unknown; event?: unknown; data?: unknown };
+      const message = payload as {
+        type?: unknown;
+        event?: unknown;
+        data?: Record<string, unknown>;
+        error_code?: unknown;
+        error_message?: unknown;
+      };
       if (message.type !== "WA_EMBEDDED_SIGNUP") return;
+
       if (message.event === "CANCEL") {
-        finish(new Error("WhatsApp setup was cancelled."));
+        const step =
+          typeof message.data?.current_step === "string"
+            ? ` at step '${message.data.current_step}'`
+            : "";
+        console.warn("[Meta Embedded Signup] Setup cancelled by user:", message);
+        finish(new Error(`WhatsApp setup was cancelled${step}.`));
         return;
       }
+
       if (message.event === "ERROR") {
-        finish(new Error("Meta could not complete WhatsApp setup."));
+        const d =
+          message.data && typeof message.data === "object" ? message.data : {};
+        const codeVal = d.error_code ?? d.code ?? message.error_code;
+        const msgVal =
+          d.error_message ??
+          d.message ??
+          message.error_message ??
+          "Meta setup encountered an error.";
+        const stepVal =
+          typeof d.current_step === "string"
+            ? ` (at step '${d.current_step}')`
+            : "";
+        console.error("[Meta Embedded Signup] Onboarding failure from Meta:", {
+          code: codeVal,
+          message: msgVal,
+          step: d.current_step,
+          raw: message,
+        });
+        const prefix = codeVal ? `Meta Error #${codeVal}: ` : "Meta Error: ";
+        finish(new Error(`${prefix}${msgVal}${stepVal}`));
         return;
       }
+
       if (message.data && typeof message.data === "object") {
-        const data = message.data as { phone_number_id?: unknown; waba_id?: unknown };
-        const phone = typeof data.phone_number_id === "string" && /^\d{1,32}$/.test(data.phone_number_id) ? data.phone_number_id : undefined;
-        const waba = typeof data.waba_id === "string" && /^\d{1,32}$/.test(data.waba_id) ? data.waba_id : undefined;
+        const data = message.data as {
+          phone_number_id?: unknown;
+          waba_id?: unknown;
+          messaging_account_ids?: unknown;
+        };
+        const phone =
+          typeof data.phone_number_id === "string" && /^\d{1,32}$/.test(data.phone_number_id)
+            ? data.phone_number_id
+            : undefined;
+        let waba =
+          typeof data.waba_id === "string" && /^\d{1,32}$/.test(data.waba_id)
+            ? data.waba_id
+            : undefined;
+        if (
+          !waba &&
+          Array.isArray(data.messaging_account_ids) &&
+          data.messaging_account_ids.length > 0
+        ) {
+          const candidate = String(data.messaging_account_ids[0]);
+          if (/^\d{1,32}$/.test(candidate)) {
+            waba = candidate;
+          }
+        }
         if (phone || waba) {
-          assets = { phone_number_id: phone, waba_id: waba };
-          if (code) finish();
+          assets = {
+            phone_number_id: phone ?? assets?.phone_number_id,
+            waba_id: waba ?? assets?.waba_id,
+          };
+        }
+      }
+
+      if (
+        message.event === "FINISH" ||
+        message.event === "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING"
+      ) {
+        console.log("[Meta Embedded Signup] Completion event:", message.event, assets);
+        if (code) {
+          finish();
         }
       }
     }
 
     window.addEventListener("message", onMessage);
-    sdk.login((response) => {
-      const authorizationCode = response.authResponse?.code;
-      if (typeof authorizationCode !== "string" || !authorizationCode) {
-        finish(new Error("Meta sign-in was cancelled or did not return an authorization code."));
-        return;
-      }
-      code = authorizationCode;
-      if (assets?.phone_number_id && assets?.waba_id) {
-        finish();
+
+    const isCoex = options?.mode !== "standard";
+    const extras: Record<string, unknown> = {
+      sessionInfoVersion: "3",
+    };
+
+    if (isCoex) {
+      extras.featureType = "whatsapp_business_app_onboarding";
+      const cCode = options?.phone?.countryCode?.replace(/[^\d]/g, "");
+      const nNum = options?.phone?.nationalNumber?.replace(/[^\d]/g, "");
+      if (cCode && nNum) {
+        extras.setup = {
+          phone: {
+            code: cCode,
+            country_code: cCode,
+            number: nNum,
+            phone_number: nNum,
+          },
+        };
       } else {
-        fallbackTimer = window.setTimeout(() => {
-          finish();
-        }, 800);
+        extras.setup = {};
       }
-    }, {
-      config_id: configId,
-      response_type: "code",
-      override_default_response_type: true,
-      extras: {
-        setup: {},
-        featureType: "whatsapp_business_app_onboarding",
-        sessionInfoVersion: "3",
+    } else {
+      extras.setup = {};
+    }
+
+    sdk.login(
+      (response) => {
+        const authorizationCode = response.authResponse?.code;
+        if (typeof authorizationCode !== "string" || !authorizationCode) {
+          finish(
+            new Error(
+              "Meta sign-in was cancelled or did not return an authorization code.",
+            ),
+          );
+          return;
+        }
+        code = authorizationCode;
+        if (assets?.phone_number_id && assets?.waba_id) {
+          finish();
+        } else {
+          fallbackTimer = window.setTimeout(() => {
+            finish();
+          }, 1200);
+        }
       },
-    });
+      {
+        config_id: configId,
+        response_type: "code",
+        override_default_response_type: true,
+        extras,
+      },
+    );
   });
 }
 
@@ -227,6 +339,13 @@ function formatTime(value: string | null | undefined) {
 }
 
 type Notice = { kind: "success" | "error"; text: string } | null;
+
+interface WhatsAppSignupModalState {
+  channel: ChannelConnection | null;
+  mode: "coexistence" | "standard";
+  countryCode: string;
+  nationalNumber: string;
+}
 
 interface ConnectForm {
   mode: "new" | "reconnect";
@@ -319,6 +438,103 @@ export function ChannelsClient() {
 
   const [creatingWebChat, setCreatingWebChat] = useState(false);
   const [embeddedSignupBusy, setEmbeddedSignupBusy] = useState(false);
+  const [whatsAppModal, setWhatsAppModal] = useState<WhatsAppSignupModalState | null>(null);
+
+  // WhatsApp Business Profile state
+  const [profileTarget, setProfileTarget] = useState<ChannelConnection | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [profileNotice, setProfileNotice] = useState("");
+  const [profileForm, setProfileForm] = useState({
+    about: "",
+    address: "",
+    description: "",
+    email: "",
+    vertical: "OTHER",
+    website1: "",
+    website2: "",
+    profile_picture_url: "",
+    preview_image: "",
+    profile_picture_base64: "",
+  });
+
+  async function openWhatsAppProfile(channel: ChannelConnection) {
+    setProfileTarget(channel);
+    setProfileLoading(true);
+    setProfileError("");
+    setProfileNotice("");
+    try {
+      const data = await getWhatsAppBusinessProfile(channel.id);
+      setProfileForm({
+        about: data.about ?? "",
+        address: data.address ?? "",
+        description: data.description ?? "",
+        email: data.email ?? "",
+        vertical: data.vertical ?? "OTHER",
+        website1: data.websites?.[0] ?? "",
+        website2: data.websites?.[1] ?? "",
+        profile_picture_url: data.profile_picture_url ?? "",
+        preview_image: data.profile_picture_url ?? "",
+        profile_picture_base64: "",
+      });
+    } catch (err) {
+      setProfileError(err instanceof Error ? err.message : "Could not load WhatsApp profile from Meta.");
+    } finally {
+      setProfileLoading(false);
+    }
+  }
+
+  function handleProfilePhotoChange(file: File | null) {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setProfileError("Image size must be less than 5 MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      setProfileForm((prev) => ({
+        ...prev,
+        preview_image: result,
+        profile_picture_base64: result,
+      }));
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function submitWhatsAppProfile(e: FormEvent) {
+    e.preventDefault();
+    if (!profileTarget) return;
+    setProfileSaving(true);
+    setProfileError("");
+    setProfileNotice("");
+    try {
+      const websites = [profileForm.website1.trim(), profileForm.website2.trim()].filter(Boolean);
+      const res = await updateWhatsAppBusinessProfile(profileTarget.id, {
+        about: profileForm.about.trim() || undefined,
+        address: profileForm.address.trim() || undefined,
+        description: profileForm.description.trim() || undefined,
+        email: profileForm.email.trim() || undefined,
+        vertical: profileForm.vertical || undefined,
+        websites: websites.length > 0 ? websites : undefined,
+        profile_picture_base64: profileForm.profile_picture_base64 || undefined,
+      });
+      setProfileNotice("Profile updated successfully on WhatsApp!");
+      if (res.profile_picture_url) {
+        setProfileForm((prev) => ({
+          ...prev,
+          profile_picture_url: res.profile_picture_url || "",
+          preview_image: res.profile_picture_url || "",
+          profile_picture_base64: "",
+        }));
+      }
+    } catch (err) {
+      setProfileError(err instanceof Error ? err.message : "Failed to update profile on WhatsApp.");
+    } finally {
+      setProfileSaving(false);
+    }
+  }
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -396,18 +612,46 @@ export function ChannelsClient() {
     }
   }
 
-  async function beginWhatsAppEmbeddedSignup(existingChannel?: ChannelConnection | null) {
+  function openWhatsAppSignup(channel: ChannelConnection | null = null) {
+    let defaultCode = "+91";
+    let defaultNumber = "";
+    const rawChannel = channel as unknown as { metadata?: Record<string, unknown> } | null;
+    if (rawChannel?.metadata && typeof rawChannel.metadata === "object") {
+      const meta = rawChannel.metadata;
+      const display = String(meta.display_phone_number || "").trim();
+      if (display.startsWith("+")) {
+        const parts = display.split(" ");
+        defaultCode = parts[0] || "+91";
+        defaultNumber = parts.slice(1).join("").replace(/[^\d]/g, "");
+      } else if (display) {
+        defaultNumber = display.replace(/[^\d]/g, "");
+      }
+    }
+    setWhatsAppModal({
+      channel,
+      mode: "coexistence",
+      countryCode: defaultCode,
+      nationalNumber: defaultNumber,
+    });
+  }
+
+  async function beginWhatsAppEmbeddedSignup(
+    options?: EmbeddedSignupOptions,
+    existingChannel?: ChannelConnection | null,
+  ) {
     setEmbeddedSignupBusy(true);
     setNotice(null);
     try {
       const config = await getWhatsAppEmbeddedSignupConfig();
       const sdk = await ensureFacebookSdk(config.app_id, config.graph_api_version);
-      const result = await runEmbeddedSignup(config.config_id, sdk);
+      const result = await runEmbeddedSignup(config.config_id, sdk, options);
       let channelId = existingChannel?.id;
       if (!channelId) {
+        const channelTitle =
+          options?.mode === "standard" ? "WhatsApp Cloud API" : "WhatsApp Business";
         const created = await createChannel({
           channel_type: "whatsapp",
-          name: "WhatsApp Business",
+          name: channelTitle,
         });
         channelId = created.id;
       }
@@ -417,6 +661,7 @@ export function ChannelsClient() {
         code: result.code,
       });
       setNotice({ kind: "success", text: "WhatsApp Business account connected successfully." });
+      setWhatsAppModal(null);
       await refresh();
     } catch (error) {
       handleError(error, error instanceof Error ? error.message : "Could not connect WhatsApp with Meta.");
@@ -804,7 +1049,7 @@ export function ChannelsClient() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className="channel-primary-btn" disabled={embeddedSignupBusy} onClick={() => void beginWhatsAppEmbeddedSignup()}>
+          <button type="button" className="channel-primary-btn" disabled={embeddedSignupBusy} onClick={() => openWhatsAppSignup(null)}>
             <span aria-hidden="true">+</span> {embeddedSignupBusy ? "Connecting…" : "Connect WhatsApp"}
           </button>
           <button type="button" className="channel-secondary-btn" onClick={() => openConnect(null)}>
@@ -847,7 +1092,7 @@ export function ChannelsClient() {
               type="button"
               className="channel-primary-btn"
               disabled={embeddedSignupBusy}
-              onClick={() => void beginWhatsAppEmbeddedSignup()}
+              onClick={() => openWhatsAppSignup(null)}
             >
               <span aria-hidden="true">+</span> {embeddedSignupBusy ? "Connecting…" : "Connect WhatsApp"}
             </button>
@@ -885,7 +1130,15 @@ export function ChannelsClient() {
                 </div>
 
                 <dl className="channel-facts">
-                  <div><dt>Phone / account</dt><dd>{channel.external_account_id ?? "—"}</dd></div>
+                  <div>
+                    <dt>Phone / account</dt>
+                    <dd>
+                      {channel.display_phone_number || (channel.provider_metadata as Record<string, string> | undefined)?.display_phone_number || channel.external_account_id || "—"}
+                      {channel.display_phone_number && channel.external_account_id && (
+                        <span className="block text-[10px] text-slate-400 font-mono">ID: {channel.external_account_id}</span>
+                      )}
+                    </dd>
+                  </div>
                   <div><dt>Business ID</dt><dd>{channel.external_business_id ?? "—"}</dd></div>
                   <div><dt>Credentials</dt><dd>{channel.has_credentials ? "Stored (encrypted)" : "None"}</dd></div>
                   <div><dt>Last connected</dt><dd>{formatTime(channel.last_connected_at)}</dd></div>
@@ -987,6 +1240,16 @@ export function ChannelsClient() {
                         <button type="button" className="channel-action" disabled={isBusy || !isWhatsApp} onClick={() => void runTest(channel)}>
                           {isBusy ? "Working…" : "Test connection"}
                         </button>
+                        {isWhatsApp && (
+                          <button
+                            type="button"
+                            className="channel-action channel-action-primary"
+                            disabled={isBusy}
+                            onClick={() => void openWhatsAppProfile(channel)}
+                          >
+                            Business Profile
+                          </button>
+                        )}
                         <button type="button" className="channel-action" disabled={isBusy || !isWhatsApp} onClick={() => void runSync(channel)}>
                           Sync templates
                         </button>
@@ -994,7 +1257,7 @@ export function ChannelsClient() {
                           type="button"
                           className="channel-action"
                           disabled={isBusy || embeddedSignupBusy || !isWhatsApp}
-                          onClick={() => void beginWhatsAppEmbeddedSignup(channel)}
+                          onClick={() => openWhatsAppSignup(channel)}
                         >
                           Reconnect with Meta
                         </button>
@@ -1012,7 +1275,7 @@ export function ChannelsClient() {
                         type="button"
                         className="channel-action channel-action-primary"
                         disabled={isBusy || embeddedSignupBusy}
-                        onClick={() => void beginWhatsAppEmbeddedSignup(channel)}
+                        onClick={() => openWhatsAppSignup(channel)}
                       >
                         {embeddedSignupBusy ? "Connecting…" : channel.status === "disconnected" || channel.status === "error" ? "Reconnect with Meta" : "Connect with Meta"}
                       </button>
@@ -1053,6 +1316,162 @@ export function ChannelsClient() {
             );
           })}
         </ul>
+      )}
+
+      {whatsAppModal && (
+        <div className="channel-modal-scrim" role="dialog" aria-modal="true" aria-labelledby="wa-modal-title">
+          <div className="channel-modal channel-modal-lg">
+            <div className="flex items-center justify-between mb-2">
+              <h2 id="wa-modal-title">
+                {whatsAppModal.channel ? `Reconnect ${whatsAppModal.channel.name}` : "Connect WhatsApp via Meta"}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setWhatsAppModal(null)}
+                className="text-gray-400 hover:text-gray-600 text-xl font-bold leading-none cursor-pointer"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <p className="channel-modal-sub">
+              Choose your preferred onboarding method. Meta allows connecting an existing WhatsApp Business mobile app number (coexistence) or onboarding a dedicated Cloud API number.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 my-4">
+              <button
+                type="button"
+                onClick={() => setWhatsAppModal({ ...whatsAppModal, mode: "coexistence" })}
+                className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                  whatsAppModal.mode === "coexistence"
+                    ? "border-emerald-600 bg-emerald-50/50 shadow-sm ring-1 ring-emerald-500"
+                    : "border-gray-200 hover:border-gray-300"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <strong className="text-sm">Existing WhatsApp App</strong>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                    Coexistence
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Keep using your mobile WhatsApp Business app. Omniflow connects via Cloud API coexistence.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setWhatsAppModal({ ...whatsAppModal, mode: "standard" })}
+                className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                  whatsAppModal.mode === "standard"
+                    ? "border-indigo-600 bg-indigo-50/50 shadow-sm ring-1 ring-indigo-500"
+                    : "border-gray-200 hover:border-gray-300"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <strong className="text-sm">New / Dedicated Number</strong>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
+                    Direct Cloud API
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Register a fresh number or migrate a dedicated number directly (not linked to the mobile app).
+                </p>
+              </button>
+            </div>
+
+            {whatsAppModal.mode === "coexistence" ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/30 p-3.5 space-y-3 mb-4">
+                <div className="text-xs font-semibold text-emerald-700 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                  Existing WhatsApp Business App Number
+                </div>
+                <p className="text-xs text-gray-600">
+                  Enter your active WhatsApp Business mobile number. Meta will prefill this number and prompt you in the WhatsApp app to authorize the connection.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <label className="channel-field">
+                    <span>Country Code</span>
+                    <input
+                      value={whatsAppModal.countryCode}
+                      onChange={(e) => setWhatsAppModal({ ...whatsAppModal, countryCode: e.target.value })}
+                      placeholder="+91"
+                      maxLength={6}
+                    />
+                  </label>
+                  <label className="channel-field sm:col-span-2">
+                    <span>Mobile Phone Number</span>
+                    <input
+                      value={whatsAppModal.nationalNumber}
+                      onChange={(e) => setWhatsAppModal({ ...whatsAppModal, nationalNumber: e.target.value })}
+                      placeholder="e.g. 9876543210"
+                      inputMode="numeric"
+                    />
+                  </label>
+                </div>
+                <p className="text-[11px] text-gray-500">
+                  Note: The device must have the official WhatsApp Business app installed (v2.24.17 or later).
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50/30 p-3.5 space-y-2 mb-4">
+                <div className="text-xs font-semibold text-indigo-700 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-indigo-500 inline-block" />
+                  Direct Meta Cloud API Onboarding
+                </div>
+                <p className="text-xs text-gray-600">
+                  Meta Embedded Signup will guide you through registering a new number or migrating an existing phone number directly to Cloud API.
+                </p>
+              </div>
+            )}
+
+            <div className="channel-modal-actions flex items-center justify-between pt-1">
+              <button
+                type="button"
+                className="channel-secondary-btn text-xs"
+                onClick={() => {
+                  const ch = whatsAppModal.channel;
+                  setWhatsAppModal(null);
+                  openConnect(ch);
+                }}
+              >
+                Manual token setup
+              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="channel-secondary-btn"
+                  onClick={() => setWhatsAppModal(null)}
+                  disabled={embeddedSignupBusy}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="channel-primary-btn"
+                  disabled={embeddedSignupBusy}
+                  onClick={() => {
+                    const modal = whatsAppModal;
+                    void beginWhatsAppEmbeddedSignup(
+                      {
+                        mode: modal.mode,
+                        phone: modal.mode === "coexistence" && modal.nationalNumber.trim()
+                          ? {
+                              countryCode: modal.countryCode,
+                              nationalNumber: modal.nationalNumber,
+                            }
+                          : undefined,
+                      },
+                      modal.channel,
+                    );
+                  }}
+                >
+                  {embeddedSignupBusy ? "Launching Meta…" : "Continue with Meta →"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {connectForm && (
@@ -1334,6 +1753,334 @@ export function ChannelsClient() {
                 {deleting ? "Deleting…" : "Delete channel"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {profileTarget && (
+        <div className="channel-modal-scrim" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
+          <div className="channel-modal" style={{ maxWidth: "980px", width: "95vw", maxHeight: "90vh", overflowY: "auto" }}>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <div>
+                <h2 id="profile-modal-title" className="text-xl font-bold text-slate-900">
+                  WhatsApp Business Profile
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Manage public details, profile photo, and operating hours for <strong>{profileTarget.name}</strong>. These details are visible when customers tap your profile on mobile WhatsApp.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setProfileTarget(null)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold p-1"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            {profileLoading ? (
+              <div className="py-16 text-center text-slate-500">
+                <div className="inline-block animate-spin w-8 h-8 border-4 border-[#25D366] border-t-transparent rounded-full mb-3" />
+                <p>Loading profile from WhatsApp Cloud API...</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mt-4">
+                {/* Form Column */}
+                <form onSubmit={submitWhatsAppProfile} className="md:col-span-7 flex flex-col gap-4">
+                  {profileNotice && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs font-medium">
+                      ✓ {profileNotice}
+                    </div>
+                  )}
+                  {profileError && (
+                    <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs font-medium">
+                      ⚠ {profileError}
+                    </div>
+                  )}
+
+                  {/* Profile Picture Upload */}
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-4">
+                    <div className="relative w-16 h-16 rounded-full overflow-hidden bg-slate-200 border-2 border-emerald-500 flex-shrink-0 flex items-center justify-center text-slate-400 font-bold text-xl">
+                      {profileForm.preview_image ? (
+                        <img
+                          src={profileForm.preview_image}
+                          alt="Profile Preview"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span>WA</span>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Profile Photo (DP)
+                      </label>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png"
+                        onChange={(e) => handleProfilePhotoChange(e.target.files?.[0] || null)}
+                        className="text-xs text-slate-600 file:mr-2.5 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-emerald-600 file:text-white hover:file:bg-emerald-700 cursor-pointer"
+                      />
+                      <span className="block text-[10px] text-slate-400 mt-1">
+                        Square JPG or PNG, max 5 MB. Updates live on WhatsApp.
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Tagline / About */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-xs font-semibold text-slate-700">About / Tagline</label>
+                      <span className="text-[11px] text-slate-400">{profileForm.about.length}/139</span>
+                    </div>
+                    <input
+                      type="text"
+                      maxLength={139}
+                      value={profileForm.about}
+                      onChange={(e) => setProfileForm({ ...profileForm, about: e.target.value })}
+                      placeholder="e.g. Always here to help | Fast Delivery • 24/7 Support"
+                      className="w-full text-xs p-2.5 border border-slate-200 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                    />
+                  </div>
+
+                  {/* Business Description & Hours */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-xs font-semibold text-slate-700">
+                        Business Description & Timing
+                      </label>
+                      <span className="text-[11px] text-slate-400">{profileForm.description.length}/512</span>
+                    </div>
+                    <textarea
+                      rows={3}
+                      maxLength={512}
+                      value={profileForm.description}
+                      onChange={(e) => setProfileForm({ ...profileForm, description: e.target.value })}
+                      placeholder="e.g. We are an authorized omnichannel service provider. Working Hours: Mon-Sat 09:00 AM - 08:00 PM."
+                      className="w-full text-xs p-2.5 border border-slate-200 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none resize-none"
+                    />
+                    <div className="flex gap-2 mt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const timingText = "🕒 Business Hours: Mon-Fri: 9:00 AM - 7:00 PM | Sat: 10:00 AM - 5:00 PM";
+                          setProfileForm((prev) => ({
+                            ...prev,
+                            description: prev.description ? `${prev.description}\n${timingText}`.slice(0, 512) : timingText,
+                          }));
+                        }}
+                        className="text-[10px] text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200"
+                      >
+                        + Insert Hours Template
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Category / Vertical */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Category / Industry</label>
+                    <select
+                      value={profileForm.vertical}
+                      onChange={(e) => setProfileForm({ ...profileForm, vertical: e.target.value })}
+                      className="w-full text-xs p-2.5 border border-slate-200 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none bg-white"
+                    >
+                      <option value="OTHER">Other / General Business</option>
+                      <option value="RETAIL">Shopping & Retail</option>
+                      <option value="AUTO">Automotive</option>
+                      <option value="BEAUTY">Beauty, Spa & Salon</option>
+                      <option value="APPAREL">Clothing & Apparel</option>
+                      <option value="EDU">Education & Academy</option>
+                      <option value="ENTERTAIN">Entertainment & Media</option>
+                      <option value="EVENT_PLAN">Event Planning & Services</option>
+                      <option value="FINANCE">Finance & Banking</option>
+                      <option value="GROCERY">Grocery Store</option>
+                      <option value="GOVT">Public & Government Services</option>
+                      <option value="HOTEL">Hotel & Lodging</option>
+                      <option value="HEALTH">Medical & Health</option>
+                      <option value="NONPROFIT">Non-Profit Organization</option>
+                      <option value="PROF_SERVICES">Professional Services</option>
+                      <option value="RESTAURANT">Restaurant & Cafe</option>
+                      <option value="TRAVEL">Travel & Transportation</option>
+                    </select>
+                  </div>
+
+                  {/* Address & Email in a 2-col row */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Physical Address</label>
+                      <input
+                        type="text"
+                        maxLength={256}
+                        value={profileForm.address}
+                        onChange={(e) => setProfileForm({ ...profileForm, address: e.target.value })}
+                        placeholder="e.g. 102 Business Hub, Mumbai"
+                        className="w-full text-xs p-2.5 border border-slate-200 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Support Email</label>
+                      <input
+                        type="email"
+                        maxLength={128}
+                        value={profileForm.email}
+                        onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
+                        placeholder="support@example.com"
+                        className="w-full text-xs p-2.5 border border-slate-200 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Websites */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Website 1</label>
+                      <input
+                        type="url"
+                        value={profileForm.website1}
+                        onChange={(e) => setProfileForm({ ...profileForm, website1: e.target.value })}
+                        placeholder="https://mywebsite.com"
+                        className="w-full text-xs p-2.5 border border-slate-200 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Website 2 / Social</label>
+                      <input
+                        type="url"
+                        value={profileForm.website2}
+                        onChange={(e) => setProfileForm({ ...profileForm, website2: e.target.value })}
+                        placeholder="https://instagram.com/mybrand"
+                        className="w-full text-xs p-2.5 border border-slate-200 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 mt-2">
+                    <button
+                      type="button"
+                      onClick={() => setProfileTarget(null)}
+                      className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={profileSaving}
+                      className="px-5 py-2 text-xs font-semibold text-white bg-[#25D366] hover:bg-[#20ba59] rounded-lg shadow-sm disabled:opacity-50"
+                    >
+                      {profileSaving ? "Saving to WhatsApp..." : "Save to WhatsApp"}
+                    </button>
+                  </div>
+                </form>
+
+                {/* Right Preview Column: Live Mobile WhatsApp Screen Mockup */}
+                <div className="md:col-span-5 flex flex-col items-center">
+                  <span className="text-[11px] font-semibold text-slate-400 mb-2 uppercase tracking-wider">
+                    📱 Live Customer Mobile Preview
+                  </span>
+
+                  {/* Phone frame */}
+                  <div className="w-[280px] bg-slate-900 rounded-[36px] p-2.5 shadow-xl border-4 border-slate-800">
+                    {/* Screen */}
+                    <div className="bg-[#121b22] text-white rounded-[26px] overflow-hidden min-h-[460px] flex flex-col text-xs font-sans">
+                      {/* Status Bar */}
+                      <div className="bg-[#0b141a] px-4 py-1 text-[10px] text-slate-400 flex justify-between items-center">
+                        <span>9:41</span>
+                        <div className="flex items-center gap-1">
+                          <span>5G</span>
+                          <span>100%</span>
+                        </div>
+                      </div>
+
+                      {/* Header */}
+                      <div className="bg-[#1f2c34] px-3 py-2.5 flex items-center gap-2 border-b border-slate-800">
+                        <span className="text-sm">←</span>
+                        <span className="font-semibold text-[13px]">Business Info</span>
+                      </div>
+
+                      {/* Content scroll area */}
+                      <div className="p-3 flex-1 flex flex-col items-center text-center overflow-y-auto">
+                        {/* Profile DP */}
+                        <div className="w-20 h-20 rounded-full overflow-hidden bg-slate-700 border-2 border-emerald-400 mt-2 mb-2 flex items-center justify-center text-slate-400 font-bold text-lg">
+                          {profileForm.preview_image ? (
+                            <img
+                              src={profileForm.preview_image}
+                              alt="DP Preview"
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span>WA</span>
+                          )}
+                        </div>
+
+                        {/* Business Name */}
+                        <div className="flex items-center gap-1 font-bold text-sm text-slate-100">
+                          <span>{profileTarget.name || "Business Name"}</span>
+                          <span className="text-emerald-400 text-xs" title="Official WhatsApp Business">✓</span>
+                        </div>
+
+                        {/* Phone Number */}
+                        <span className="text-[11px] text-slate-400 mb-2">
+                          {profileTarget.display_phone_number ||
+                           (profileTarget.provider_metadata as Record<string, string> | undefined)?.display_phone_number ||
+                           "+91 82379 96380"}
+                        </span>
+
+                        {/* Category badge */}
+                        <span className="inline-block bg-[#1f2c34] text-emerald-300 text-[10px] px-2.5 py-0.5 rounded-full mb-3">
+                          {profileForm.vertical || "Business"}
+                        </span>
+
+                        {/* About card */}
+                        <div className="w-full bg-[#1f2c34] rounded-xl p-2.5 mb-2 text-left">
+                          <span className="text-[10px] text-slate-400 uppercase tracking-wide block mb-0.5">About</span>
+                          <p className="text-[11px] text-slate-200">
+                            {profileForm.about || "Available on WhatsApp"}
+                          </p>
+                        </div>
+
+                        {/* Details card (Description, Timing, Address, Contact) */}
+                        <div className="w-full bg-[#1f2c34] rounded-xl p-2.5 text-left flex flex-col gap-2">
+                          {profileForm.description && (
+                            <div>
+                              <span className="text-[10px] text-slate-400 uppercase tracking-wide block mb-0.5">Description & Hours</span>
+                              <p className="text-[11px] text-slate-300 whitespace-pre-line leading-relaxed">
+                                {profileForm.description}
+                              </p>
+                            </div>
+                          )}
+
+                          {profileForm.address && (
+                            <div className="flex items-start gap-1.5 pt-1 border-t border-slate-700/60">
+                              <span className="text-xs">📍</span>
+                              <span className="text-[11px] text-slate-300">{profileForm.address}</span>
+                            </div>
+                          )}
+
+                          {profileForm.email && (
+                            <div className="flex items-start gap-1.5 pt-1 border-t border-slate-700/60">
+                              <span className="text-xs">✉</span>
+                              <span className="text-[11px] text-emerald-400 truncate">{profileForm.email}</span>
+                            </div>
+                          )}
+
+                          {(profileForm.website1 || profileForm.website2) && (
+                            <div className="flex items-start gap-1.5 pt-1 border-t border-slate-700/60">
+                              <span className="text-xs">🌐</span>
+                              <div className="flex flex-col text-[11px] text-emerald-400 truncate">
+                                {profileForm.website1 && <span className="truncate">{profileForm.website1}</span>}
+                                {profileForm.website2 && <span className="truncate">{profileForm.website2}</span>}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

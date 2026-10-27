@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 
-import { InboxApiError, assignInboxConversation, changeInboxConversationStatus, getInboxChannelAvailability, getInboxContactDetails, getInboxConversation, getInboxFilterOptions, getInboxTemplates, inboxMediaUrl, listInboxConversations, listInboxMessages, markInboxConversationRead, sendInboxTextMessage, sendInboxTemplateMessage, type InboxChannelOption, type InboxContactDetails, type InboxTemplateOption, type InboxUserOption } from "@/lib/api/inbox";
+import { InboxApiError, assignInboxConversation, changeInboxConversationMode, changeInboxConversationStatus, getInboxChannelAvailability, getInboxContactDetails, getInboxConversation, getInboxFilterOptions, getInboxTemplates, inboxMediaUrl, listInboxConversations, listInboxMessages, markInboxConversationRead, sendInboxTextMessage, sendInboxTemplateMessage, type InboxChannelOption, type InboxContactDetails, type InboxTemplateOption, type InboxUserOption } from "@/lib/api/inbox";
 import { uploadTemplateMedia } from "@/lib/templates/browser";
 import type { Conversation, ConversationListParams, ConversationStatus } from "@/lib/api/conversations";
 import { MAX_TEXT_LENGTH, type Message } from "@/lib/api/messages";
@@ -427,6 +427,16 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
     await loadConversations(false);
   }
 
+  async function handleModeChange(mode: "chatbot" | "human") {
+    if (!selectedConversation) return;
+    try {
+      const updated = await changeInboxConversationMode(selectedConversation.id, mode);
+      await updateConversation(updated);
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : "Mode could not be changed.");
+    }
+  }
+
   async function openTemplatePicker() {
     if (!selectedConversation) return;
     setTemplateOpen((open) => !open);
@@ -641,7 +651,16 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
                     </span>
                     <span className="conversation-row-middle">
                       <span className="conversation-phone">{contactLine(conversation)}</span>
-                      <span className={`status-tag status-${conversation.status}`}>{conversation.status}</span>
+                      <div className="flex items-center gap-1">
+                        <span className={`status-tag status-${conversation.status}`}>{conversation.status}</span>
+                        <span className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                          conversation.mode === "human"
+                            ? "bg-blue-50 text-blue-700 border border-blue-200"
+                            : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                        }`} title={conversation.mode === "human" ? "Human Mode (Manual)" : "Chatbot Mode (Flow/AI)"}>
+                          {conversation.mode === "human" ? "👤 Human" : "🤖 Bot"}
+                        </span>
+                      </div>
                     </span>
                     <span className="conversation-row-bottom">
                       <span className="conversation-preview">{conversationPreview(conversation)}</span>
@@ -676,6 +695,13 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
                 <div className="thread-header-meta">
                   <span className="thread-channel">{selectedConversation.channel.name}</span>
                   <span className={`status-tag status-${selectedConversation.status}`}>{selectedConversation.status}</span>
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                    selectedConversation.mode === "human"
+                      ? "bg-blue-100 text-blue-800 border border-blue-200"
+                      : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                  }`}>
+                    {selectedConversation.mode === "human" ? "👤 Human Mode" : "🤖 Chatbot Mode"}
+                  </span>
                 </div>
               </header>
 
@@ -697,6 +723,40 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
                     {INBOX_STATUSES.map((status) => <option key={status} value={status}>{status[0].toUpperCase() + status.slice(1)}</option>)}
                   </select>
                 </label>
+
+                {/* Chatbot Mode / Human Mode Switch */}
+                <div className="flex items-center gap-1.5 border-l border-slate-200 pl-3">
+                  <span className="text-slate-500 font-medium">Mode:</span>
+                  <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-100 p-0.5 shadow-2xs">
+                    <button
+                      type="button"
+                      onClick={() => void handleModeChange("chatbot")}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition cursor-pointer ${
+                        (selectedConversation.mode ?? "chatbot") === "chatbot"
+                          ? "bg-emerald-600 text-white shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                      title="Chatbot Mode: Automated flows and AI auto-replies are active"
+                    >
+                      <span>🤖</span>
+                      <span>Chatbot</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleModeChange("human")}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition cursor-pointer ${
+                        selectedConversation.mode === "human"
+                          ? "bg-blue-600 text-white shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                      title="Human Mode: Bot automation paused for manual human replies"
+                    >
+                      <span>👤</span>
+                      <span>Human</span>
+                    </button>
+                  </div>
+                </div>
+
                 <a className="ml-auto text-sky-700 hover:underline" href="/contacts">Open Contacts</a>
               </div>
               <aside className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-600 xl:hidden" aria-label="Contact details">
@@ -724,6 +784,41 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
               </div>
 
               <div className="composer-wrap">
+                {selectedConversation.mode === "human" ? (
+                  <div className="mx-4 mt-2 mb-1 flex items-center justify-between rounded-xl bg-blue-50/90 border border-blue-200 px-3.5 py-2 text-xs text-blue-900 shadow-2xs">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">👤</span>
+                      <div>
+                        <span className="font-bold">Human Mode Active: </span>
+                        <span className="text-blue-700">Bot and flow auto-replies are paused. Answer manually below.</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleModeChange("chatbot")}
+                      className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-blue-700 border border-blue-300 shadow-2xs hover:bg-blue-50 transition cursor-pointer"
+                    >
+                      <span>Switch to Chatbot 🤖</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mx-4 mt-2 mb-1 flex items-center justify-between rounded-xl bg-emerald-50/90 border border-emerald-200 px-3.5 py-2 text-xs text-emerald-900 shadow-2xs">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">🤖</span>
+                      <div>
+                        <span className="font-bold">Chatbot Mode Active: </span>
+                        <span className="text-emerald-700">Default flows and AI respond automatically to customer messages.</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleModeChange("human")}
+                      className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-emerald-700 border border-emerald-300 shadow-2xs hover:bg-emerald-50 transition cursor-pointer"
+                    >
+                      <span>Take Over (Human) 👤</span>
+                    </button>
+                  </div>
+                )}
                 {canReplyReason && <p className="composer-notice" role="status">{canReplyReason}</p>}
                 {sendError && <div className={`send-error ${uncertainSend ? "send-error-uncertain" : ""}`} role="alert">
                   <p>{sendError}</p>
@@ -819,6 +914,23 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
           <p className="mt-3 text-xs text-slate-700">Status: <span className="capitalize">{selectedConversation.status}</span></p>
           <p className="mt-2 text-xs text-slate-700">Channel: {selectedConversation.channel.name}</p>
           <p className="mt-2 text-xs text-slate-700">Assigned to: {selectedConversation.assigned_user ? [selectedConversation.assigned_user.first_name, selectedConversation.assigned_user.last_name].filter(Boolean).join(" ") : "Unassigned"}</p>
+          <div className="mt-3 pt-3 border-t border-slate-200/80">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700">Automation Mode:</span>
+              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                selectedConversation.mode === "human"
+                  ? "bg-blue-100 text-blue-800 border border-blue-200"
+                  : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+              }`}>
+                {selectedConversation.mode === "human" ? "👤 Human Mode" : "🤖 Chatbot Mode"}
+              </span>
+            </div>
+            <p className="mt-1.5 text-[11px] text-slate-500 leading-relaxed">
+              {selectedConversation.mode === "human"
+                ? "Bot flow & AI auto-replies are paused. All replies sent manually by human agent."
+                : "Default mode. Bot flow and AI automatically reply to incoming customer messages."}
+            </p>
+          </div>
         </aside>}
       </div>
     </section>

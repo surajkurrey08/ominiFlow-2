@@ -20,6 +20,8 @@ export function readUnverifiedTokenClaims(token: string): TokenClaims | null {
   }
 }
 
+export const INACTIVITY_TIMEOUT_SECONDS = 24 * 60 * 60; // 24 hours (86,400 seconds)
+
 export function tokenMaxAgeSeconds(token: string, nowSeconds = Date.now() / 1000) {
   const claims = readUnverifiedTokenClaims(token);
   if (typeof claims?.exp !== "number" || !Number.isFinite(claims.exp)) return null;

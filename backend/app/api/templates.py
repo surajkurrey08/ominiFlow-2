@@ -19,6 +19,7 @@ from app.schemas.template import (
     AiTemplateGenerateResponse,
     LocalTemplateCreate,
     LocalTemplateSubmission,
+    LocalTemplateUpdate,
     TemplateListResponse,
     TemplateResponse,
     TemplateSyncResponse,
@@ -396,3 +397,31 @@ def list_all_templates(
 def get_template(template_id: uuid.UUID, tenant: CurrentTenant, db: DbSession):
     with service_errors(ERRORS):
         return template_service.get_template(db, tenant.id, template_id)
+
+
+@router.patch(
+    "/templates/{template_id}",
+    response_model=TemplateResponse,
+    dependencies=[Depends(require_permission("template:sync"))],
+)
+def update_local_template(
+    template_id: uuid.UUID,
+    data: LocalTemplateUpdate,
+    tenant: CurrentTenant,
+    db: DbSession,
+):
+    with service_errors(ERRORS):
+        return template_service.update_local_template(db, tenant.id, template_id, data)
+
+
+@router.delete(
+    "/templates/{template_id}",
+    dependencies=[Depends(require_permission("template:sync"))],
+)
+def delete_template(
+    template_id: uuid.UUID,
+    tenant: CurrentTenant,
+    db: DbSession,
+):
+    with service_errors(ERRORS):
+        return template_service.delete_template(db, tenant.id, template_id)
