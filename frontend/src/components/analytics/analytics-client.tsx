@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 
 // Icons
@@ -66,43 +66,44 @@ export function AnalyticsClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadData() {
-      setLoading(true);
-      setError(null);
-      try {
-        const queryParams = `?start_date=${dateRange.start}T00:00:00Z&end_date=${dateRange.end}T23:59:59Z`;
-        
-        const [overviewRes, channelsRes, tsRes, autoRes] = await Promise.all([
-          fetch(`/api/analytics/overview${queryParams}`),
-          fetch(`/api/analytics/channels`),
-          fetch(`/api/analytics/time-series${queryParams}`),
-          fetch(`/api/analytics/automations${queryParams}`)
-        ]);
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const queryParams = `?start_date=${dateRange.start}T00:00:00Z&end_date=${dateRange.end}T23:59:59Z`;
+      
+      const [overviewRes, channelsRes, tsRes, autoRes] = await Promise.all([
+        fetch(`/api/analytics/overview${queryParams}`),
+        fetch(`/api/analytics/channels`),
+        fetch(`/api/analytics/time-series${queryParams}`),
+        fetch(`/api/analytics/automations${queryParams}`)
+      ]);
 
-        if (!overviewRes.ok || !channelsRes.ok || !tsRes.ok || !autoRes.ok) {
-          throw new Error("Failed to load analytics data.");
-        }
-
-        const [ovData, chData, tsData, auData] = await Promise.all([
-          overviewRes.json(),
-          channelsRes.json(),
-          tsRes.json(),
-          autoRes.json()
-        ]);
-
-        setOverview(ovData);
-        setChannels(chData);
-        setTimeSeries(tsData);
-        setAutomations(auData);
-      } catch (e: any) {
-        setError(e.message || "An error occurred.");
-      } finally {
-        setLoading(false);
+      if (!overviewRes.ok || !channelsRes.ok || !tsRes.ok || !autoRes.ok) {
+        throw new Error("Failed to load analytics data.");
       }
+
+      const [ovData, chData, tsData, auData] = await Promise.all([
+        overviewRes.json(),
+        channelsRes.json(),
+        tsRes.json(),
+        autoRes.json()
+      ]);
+
+      setOverview(ovData);
+      setChannels(chData);
+      setTimeSeries(tsData);
+      setAutomations(auData);
+    } catch (e: any) {
+      setError(e.message || "An error occurred.");
+    } finally {
+      setLoading(false);
     }
-    loadData();
   }, [dateRange]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   const metrics = overview ? [
     { label: "Total Contacts", value: overview.total_contacts, icon: UsersIcon, iconColor: "text-emerald-500", iconBg: "bg-emerald-50" },
@@ -177,6 +178,17 @@ export function AnalyticsClient() {
                 className="bg-transparent border-none outline-none text-sm font-bold text-slate-700 cursor-pointer"
               />
             </div>
+            <button
+              type="button"
+              onClick={() => void loadData()}
+              disabled={loading}
+              title="Refresh analytics"
+              aria-label="Refresh analytics"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold transition-colors disabled:opacity-50 cursor-pointer shadow-sm"
+            >
+              <span aria-hidden="true" className={loading ? "animate-spin" : ""}>↻</span>
+              <span>{loading ? "Refreshing…" : "Refresh"}</span>
+            </button>
             <button className="p-2.5 bg-white border border-slate-200 rounded-md text-slate-500 hover:bg-slate-50 shadow-sm transition-colors">
               <SettingsIcon className="w-5 h-5" />
             </button>

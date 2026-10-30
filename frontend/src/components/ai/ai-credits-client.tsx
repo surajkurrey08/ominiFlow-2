@@ -62,6 +62,7 @@ export function AiCreditsClient() {
   const [usage, setUsage] = useState<UsageTx[]>([]);
   const [usageTotal, setUsageTotal] = useState<number>(0);
   const [isPaying, setIsPaying] = useState(false);
+  const [refreshingTx, setRefreshingTx] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const activeCredits = customAmount ? parseInt(customAmount) || 0 : (packages.find(p => p.id === selectedPack)?.credits || 0);
@@ -114,6 +115,15 @@ export function AiCreditsClient() {
       // keep fallback
     }
   }, []);
+
+  const handleRefreshAll = async () => {
+    setRefreshingTx(true);
+    try {
+      await Promise.all([fetchBalance(), fetchTransactions(), fetchUsage()]);
+    } finally {
+      setRefreshingTx(false);
+    }
+  };
 
   useEffect(() => {
     fetchBalance();
@@ -461,10 +471,15 @@ export function AiCreditsClient() {
             </h2>
             <div className="flex gap-3">
               <button 
-                onClick={() => fetchTransactions()}
-                className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                type="button"
+                onClick={() => void handleRefreshAll()}
+                disabled={refreshingTx}
+                title="Refresh transactions and balance"
+                aria-label="Refresh transactions and balance"
+                className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 cursor-pointer"
               >
-                <RefreshCwIcon className="w-4 h-4" /> Refresh
+                <RefreshCwIcon className={`w-4 h-4 ${refreshingTx ? "animate-spin" : ""}`} />
+                <span>{refreshingTx ? "Refreshing…" : "Refresh"}</span>
               </button>
               <button className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50">
                 <DownloadIcon className="w-4 h-4" /> Export

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const ChevronLeftIcon = (props: React.SVGProps<SVGSVGElement>) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><polyline points="15 18 9 12 15 6" /></svg>);
 const KeyIcon = (props: React.SVGProps<SVGSVGElement>) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" /></svg>);
@@ -20,6 +20,25 @@ import { KnowledgeBaseTab } from "./knowledge-base-tab";
 export function AiConfigClient() {
   const creditBalance = useCreditBalance();
   const [activeTab, setActiveTab] = useState("API Providers");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get("tab");
+      if (tabParam) {
+        const lower = tabParam.toLowerCase();
+        if (lower === "business-profile" || lower === "business profile" || lower === "business_profile") {
+          setActiveTab("Business Profile");
+        } else if (lower === "api-providers" || lower === "api providers") {
+          setActiveTab("API Providers");
+        } else if (lower === "agent-tools" || lower === "agent tools") {
+          setActiveTab("Agent Tools");
+        } else if (lower === "knowledge-base" || lower === "knowledge base") {
+          setActiveTab("Knowledge Base");
+        }
+      }
+    }
+  }, []);
   
   const {
     provider, setProvider,
@@ -73,7 +92,14 @@ export function AiConfigClient() {
           {["API Providers", "Business Profile", "Agent Tools", "Knowledge Base"].map(tab => (
             <button 
               key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => {
+                setActiveTab(tab);
+                if (typeof window !== "undefined") {
+                  const url = new URL(window.location.href);
+                  url.searchParams.set("tab", tab.toLowerCase().replace(/\s+/g, "-"));
+                  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+                }
+              }}
               className={`px-4 py-2.5 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors ${
                 activeTab === tab 
                   ? "border-blue-600 text-blue-600 bg-blue-50/50 rounded-t-lg" 

@@ -15,20 +15,31 @@ async function handle(request: NextRequest, context: Context, method: string) {
   
   const pathParams = segments.length > 0 ? `/${segments.join('/')}` : '';
   
-  let body: string | undefined;
+  const contentType = request.headers.get("content-type") || "";
+  let body: any = undefined;
+
   if (!["GET", "DELETE"].includes(method)) {
-    const raw = await request.text();
-    if (raw.length > 1_000_000) return NextResponse.json({ error: "Request body is too large." }, { status: 413 });
-    try { JSON.parse(raw); } catch { return NextResponse.json({ error: "Invalid JSON request." }, { status: 400 }); }
-    body = raw;
+    if (contentType.includes("multipart/form-data")) {
+      body = await request.arrayBuffer();
+    } else {
+      const raw = await request.text();
+      if (raw.length > 2_000_000) return NextResponse.json({ error: "Request body is too large." }, { status: 413 });
+      try { JSON.parse(raw); } catch { return NextResponse.json({ error: "Invalid JSON request." }, { status: 400 }); }
+      body = raw;
+    }
   }
   
   const url = backendApiUrl(`/api/v1/whatsapp-forms${pathParams}`);
   url.search = request.nextUrl.search;
   
-  const headers: Record<string, string> = { Accept: "application/json" };
+  const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  if (body) headers["Content-Type"] = "application/json";
+  if (contentType.includes("multipart/form-data")) {
+    headers["Content-Type"] = contentType;
+  } else if (body) {
+    headers["Content-Type"] = "application/json";
+    headers["Accept"] = "application/json";
+  }
 
   let upstream: Response;
   try { 
@@ -43,6 +54,16 @@ async function handle(request: NextRequest, context: Context, method: string) {
   catch { return NextResponse.json({ error: FAIL }, { status: 503 }); }
   
   if (upstream.status === 204) return new NextResponse(null, { status: 204 });
+
+  if (pathParams.startsWith("/public/files/")) {
+    return new NextResponse(upstream.body, {
+      status: upstream.status,
+      headers: {
+        "Content-Type": upstream.headers.get("content-type") || "application/octet-stream",
+        "Cache-Control": "public, max-age=86400",
+      },
+    });
+  }
   
   if (!upstream.ok) {
     const payload = await parseJson(upstream);

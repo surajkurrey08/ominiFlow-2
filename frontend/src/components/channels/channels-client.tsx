@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import Link from "next/link";
 
 import {
   ChannelApiError,
@@ -1049,6 +1050,16 @@ export function ChannelsClient() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="channel-secondary-btn inline-flex items-center gap-1.5"
+            disabled={loading}
+            onClick={() => void refresh()}
+            title="Refresh channels"
+          >
+            <span aria-hidden="true" className={loading ? "animate-spin" : ""}>↻</span>
+            <span>{loading ? "Refreshing…" : "Refresh"}</span>
+          </button>
           <button type="button" className="channel-primary-btn" disabled={embeddedSignupBusy} onClick={() => openWhatsAppSignup(null)}>
             <span aria-hidden="true">+</span> {embeddedSignupBusy ? "Connecting…" : "Connect WhatsApp"}
           </button>
@@ -1241,14 +1252,12 @@ export function ChannelsClient() {
                           {isBusy ? "Working…" : "Test connection"}
                         </button>
                         {isWhatsApp && (
-                          <button
-                            type="button"
-                            className="channel-action channel-action-primary"
-                            disabled={isBusy}
-                            onClick={() => void openWhatsAppProfile(channel)}
+                          <Link
+                            href="/ai-configuration?tab=business-profile"
+                            className="channel-action channel-action-primary inline-flex items-center justify-center text-center"
                           >
                             Business Profile
-                          </button>
+                          </Link>
                         )}
                         <button type="button" className="channel-action" disabled={isBusy || !isWhatsApp} onClick={() => void runSync(channel)}>
                           Sync templates

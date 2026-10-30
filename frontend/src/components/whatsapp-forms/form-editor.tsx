@@ -13,7 +13,8 @@ export type FieldType =
   | "dropdown"
   | "radio"
   | "checkbox"
-  | "date";
+  | "date"
+  | "file";
 
 export interface FormField {
   id: string;
@@ -23,6 +24,8 @@ export interface FormField {
   required?: boolean;
   options?: string[];
   description?: string;
+  fileType?: "all" | "image" | "video" | "document";
+  allowUrl?: boolean;
 }
 
 export interface FormScreen {
@@ -222,6 +225,18 @@ export function FormEditor({ id }: { id?: string }) {
           label: "Appointment Date",
           placeholder: "YYYY-MM-DD",
           required: true,
+        };
+        break;
+      case "file":
+        newField = {
+          id: fieldId,
+          type: "file",
+          label: "Photos & Verification",
+          description: "Upload photos, verification documents, video or enter URL",
+          placeholder: "Choose file or paste URL...",
+          required: true,
+          fileType: "all",
+          allowUrl: true,
         };
         break;
     }
@@ -684,6 +699,38 @@ export function FormEditor({ id }: { id?: string }) {
                                 <span>📅</span>
                               </div>
                             </div>
+                          ) : field.type === "file" ? (
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                {field.label} {field.required && <span className="text-rose-500">*</span>}
+                              </label>
+                              {field.description && (
+                                <p className="text-[11px] text-slate-500 mb-1.5">{field.description}</p>
+                              )}
+                              <div className="border-2 border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-50/80 rounded-xl p-3.5 text-center transition-colors">
+                                <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-1.5 shadow-xs text-sm">
+                                  📁
+                                </div>
+                                <p className="text-xs font-bold text-slate-800">Upload Media or Document</p>
+                                <p className="text-[10px] text-slate-500 mt-0.5">
+                                  {field.fileType === "image"
+                                    ? "JPG, PNG, WebP supported"
+                                    : field.fileType === "video"
+                                    ? "MP4, MOV video supported"
+                                    : field.fileType === "document"
+                                    ? "PDF, DOCX documents supported"
+                                    : "Photos, Videos, PDFs or Document files"}
+                                </p>
+                                <div className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 bg-[#00b050] text-white rounded-lg text-[11px] font-bold shadow-xs">
+                                  <span>⬆</span> Choose File
+                                </div>
+                                {field.allowUrl !== false && (
+                                  <div className="mt-2 pt-2 border-t border-emerald-200/60 text-[10px] text-emerald-800 font-medium">
+                                    🔗 Or paste Google Drive / Image / Video URL
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           ) : null}
 
                           {/* Inline Configuration Drawer */}
@@ -779,6 +826,47 @@ export function FormEditor({ id }: { id?: string }) {
                                 </div>
                               )}
 
+                              {field.type === "file" && (
+                                <div className="space-y-2 pt-1">
+                                  <div>
+                                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                                      Help Note / Instructions:
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={field.description || ""}
+                                      onChange={(e) => updateField(field.id, { description: e.target.value })}
+                                      placeholder="e.g. Upload clear photo of ID or shop front"
+                                      className="w-full text-xs px-2.5 py-1.5 bg-white border border-slate-200 rounded-md outline-none focus:border-emerald-500"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                                      Accepted Media Type:
+                                    </label>
+                                    <select
+                                      value={field.fileType || "all"}
+                                      onChange={(e) => updateField(field.id, { fileType: e.target.value as any })}
+                                      className="w-full text-xs px-2.5 py-1.5 bg-white border border-slate-200 rounded-md outline-none focus:border-emerald-500 font-medium"
+                                    >
+                                      <option value="all">📁 All Files (Photos, Videos, Documents)</option>
+                                      <option value="image">🖼️ Images Only (JPG, PNG, WebP)</option>
+                                      <option value="video">🎥 Videos Only (MP4, MOV)</option>
+                                      <option value="document">📄 Documents / PDFs Only</option>
+                                    </select>
+                                  </div>
+                                  <label className="flex items-center gap-2 pt-1 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={field.allowUrl !== false}
+                                      onChange={(e) => updateField(field.id, { allowUrl: e.target.checked })}
+                                      className="w-3.5 h-3.5 text-emerald-600 rounded border-slate-300"
+                                    />
+                                    <span className="text-xs font-semibold text-slate-700">Allow submitting direct Media URL / Google Drive link</span>
+                                  </label>
+                                </div>
+                              )}
+
                               {field.type !== "heading" && (
                                 <label className="flex items-center gap-2 pt-1 cursor-pointer">
                                   <input
@@ -820,6 +908,7 @@ export function FormEditor({ id }: { id?: string }) {
                 { type: "radio", label: "Radio Buttons", desc: "Single-choice selection cards" },
                 { type: "checkbox", label: "Checkboxes", desc: "Multi-select option tags" },
                 { type: "date", label: "Date Picker", desc: "Pick calendar appointment date" },
+                { type: "file", label: "File / Media Upload", desc: "Upload photos, verification docs, video or URL" },
               ].map((comp) => (
                 <button
                   key={comp.type}

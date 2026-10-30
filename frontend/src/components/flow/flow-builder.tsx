@@ -12,8 +12,13 @@ import { flowsApi, type FlowNode, MESSAGE_TYPES } from "@/lib/flows/browser";
 import { BuilderContext } from "@/components/flow/builder-context";
 import { MessageNode } from "@/components/flow/message-node";
 import { NodeEditor } from "@/components/flow/node-editor";
+import { DeletableEdge } from "@/components/flow/deletable-edge";
 
 const nodeTypes = { message: MessageNode };
+const edgeTypes = {
+  smoothstep: DeletableEdge,
+  default: DeletableEdge,
+};
 
 function sanitize(nodes: Node[]): FlowNode[] {
   return nodes.map((n) => ({ id: n.id, type: n.type ?? "message", position: n.position, data: n.data as FlowNode["data"] }));
@@ -180,6 +185,55 @@ function BuilderInner({ flowId }: { flowId: string }) {
     setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
     setSelectedId((cur) => (cur === id ? null : cur));
   }, [snapshot, setNodes, setEdges]);
+
+  const onNodesDelete = useCallback((deleted: Node[]) => {
+    snapshot();
+    const deletedIds = new Set(
+      deleted
+        .filter((n) => !Boolean(n.data?.isStart))
+        .map((n) => n.id)
+    );
+    if (deletedIds.size === 0) return;
+    setNodes((nds) => nds.filter((n) => !deletedIds.has(n.id)));
+    setEdges((eds) => eds.filter((e) => !deletedIds.has(e.source) && !deletedIds.has(e.target)));
+    if (selectedId && deletedIds.has(selectedId)) {
+      setSelectedId(null);
+    }
+  }, [snapshot, setNodes, setEdges, selectedId]);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshFlow = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const f = await flowsApi.get(flowId);
+      setName(f.name);
+      setStatus(f.status);
+      setNodes((f.nodes ?? []) as unknown as Node[]);
+      setEdges((f.edges ?? []) as unknown as Edge[]);
+      setToast("Flow refreshed");
+      setTimeout(() => setToast(""), 2000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not refresh flow.");
+      setTimeout(() => setError(""), 3000);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [flowId, setNodes, setEdges]);
+
+  const onDeleteEdge = useCallback((id: string) => {
+    snapshot();
+    setEdges((eds) => eds.filter((e) => e.id !== id));
+    setToast("Connection deleted");
+    setTimeout(() => setToast(""), 2000);
+  }, [snapshot, setEdges]);
+
+  const onEdgesDelete = useCallback((deleted: Edge[]) => {
+    snapshot();
+    const ids = new Set(deleted.map((e) => e.id));
+    setEdges((eds) => eds.filter((e) => !ids.has(e.id)));
+    setToast("Connection deleted");
+    setTimeout(() => setToast(""), 2000);
+  }, [snapshot, setEdges]);
 
   const onDuplicate = useCallback((id: string) => {
     snapshot();
@@ -413,7 +467,7 @@ function BuilderInner({ flowId }: { flowId: string }) {
   );
 
   return (
-    <BuilderContext.Provider value={{ onEdit, onDuplicate, onDelete, selectedId }}>
+    <BuilderContext.Provider value={{ onEdit, onDuplicate, onDelete, onDeleteEdge, selectedId }}>
       <div className="fixed inset-0 z-40 flex flex-col bg-slate-50 select-none">
         {/* Top bar */}
         <div className="flex items-center justify-between gap-3 border-b border-slate-200/90 bg-white px-5 py-3 shadow-xs">
@@ -449,6 +503,16 @@ function BuilderInner({ flowId }: { flowId: string }) {
                 {toast}
               </span>
             )}
+            <button
+              type="button"
+              onClick={() => void refreshFlow()}
+              disabled={refreshing}
+              title="Refresh flow from server"
+              className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 disabled:opacity-50 transition cursor-pointer"
+            >
+              <span className={refreshing ? "animate-spin" : ""}>↻</span>
+              <span>{refreshing ? "Refreshing…" : "Refresh"}</span>
+            </button>
             <button
               type="button"
               onClick={undo}
@@ -487,6 +551,7 @@ function BuilderInner({ flowId }: { flowId: string }) {
               onChange={changeNodeData}
               onClose={() => { setSelectedId(null); setNodes((nds) => nds.map((n) => ({ ...n, selected: false }))); }}
               onDuplicate={() => selectedId && onDuplicate(selectedId)}
+              onDelete={() => selectedId && onDelete(selectedId)}
             />
           )}
 
@@ -498,7 +563,10 @@ function BuilderInner({ flowId }: { flowId: string }) {
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
+              onNodesDelete={onNodesDelete}
+              onEdgesDelete={onEdgesDelete}
               nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
               defaultEdgeOptions={{ type: "smoothstep" }}
               onPaneClick={() => {
                 setSelectedId(null);
@@ -577,11 +645,12 @@ function BuilderInner({ flowId }: { flowId: string }) {
                     </button>
 
                     {addMenuOpen && (
-                      <div className="absolute bottom-12 left-1/2 -translate-x-1/2 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl ring-1 ring-black/5 z-50">
-                        <div className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                          Add New Node
+                      <div className="absolute bottom-12 left-1/2 -translate-x-1/2 w-64 max-h-[min(460px,calc(100vh-140px))] flex flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl ring-1 ring-black/5 z-50 overflow-hidden">
+                        <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between shrink-0">
+                          <span>Add New Node</span>
+                          <span className="text-[10px] font-medium text-slate-400">{MESSAGE_TYPES.length} types</span>
                         </div>
-                        <div className="mt-1 space-y-0.5">
+                        <div className="p-1.5 overflow-y-auto space-y-0.5 overscroll-contain">
                           {MESSAGE_TYPES.map((t) => (
                             <button
                               key={t.value}
@@ -589,22 +658,53 @@ function BuilderInner({ flowId }: { flowId: string }) {
                               onClick={() => addTypedNode(t.value)}
                               className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition"
                             >
-                              <span>
+                              <span className="text-sm shrink-0">
                                 {t.value === "text" ? "💬" :
                                  t.value === "button" ? "🔘" :
                                  t.value === "list" ? "📋" :
                                  t.value === "condition" ? "🔀" :
                                  t.value === "delay" ? "⏱" :
                                  t.value === "template" ? "📑" :
-                                 t.value === "get_user_data" ? "📥" : "📄"}
+                                 t.value === "carousel" ? "🎠" :
+                                 t.value === "get_user_data" ? "📥" :
+                                 t.value === "external_api" ? "🌐" :
+                                 t.value === "actions" ? "⚡" :
+                                 t.value === "razorpay" ? "💳" :
+                                 t.value === "whatsapp_form" ? "📝" :
+                                 t.value === "zoho_crm" ? "💼" :
+                                 t.value === "send_email" ? "✉️" :
+                                 t.value === "video" ? "🎥" :
+                                 t.value === "image" ? "🖼️" :
+                                 t.value === "audio" ? "🎵" :
+                                 t.value === "document" ? "📄" : "📄"}
                               </span>
-                              <span>{t.label}</span>
+                              <span className="truncate">{t.label}</span>
                             </button>
                           ))}
                         </div>
                       </div>
                     )}
                   </div>
+
+                  {/* Quick Delete for Selected Node */}
+                  {selectedNode && !selectedNode.data?.isStart && (
+                    <>
+                      <div className="h-5 w-px bg-slate-200 mx-0.5" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm("Are you sure you want to delete this node?")) {
+                            onDelete(selectedNode.id);
+                          }
+                        }}
+                        title="Delete selected node"
+                        className="flex h-9 items-center gap-1.5 rounded-xl bg-rose-50 border border-rose-200 px-3 text-xs font-bold text-rose-600 hover:bg-rose-100 hover:text-rose-700 transition cursor-pointer shadow-2xs"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                        <span>Delete</span>
+                      </button>
+                    </>
+                  )}
                 </div>
               </Panel>
             </ReactFlow>

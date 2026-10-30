@@ -102,7 +102,13 @@ export function FormsClient() {
             />
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={refresh} disabled={busy} className="p-2.5 bg-white border border-slate-200 rounded-md text-slate-600 hover:bg-slate-50">
+            <button
+              onClick={() => void refresh()}
+              disabled={busy}
+              title="Refresh forms"
+              aria-label="Refresh forms"
+              className="p-2.5 bg-white border border-slate-200 rounded-md text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
+            >
               <RefreshIcon className={`w-4 h-4 ${busy ? 'animate-spin' : ''}`} />
             </button>
             <Link href="/whatsapp-forms/new" className="flex items-center gap-2 bg-[#00b050] hover:bg-[#009040] text-white px-5 py-2.5 rounded-md font-semibold text-sm transition-colors shadow-sm">

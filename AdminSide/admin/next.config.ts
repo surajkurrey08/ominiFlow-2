@@ -46,6 +46,11 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
+        source: "/password-resets",
+        destination: "/admin/password-resets",
+        permanent: false,
+      },
+      {
         source: "/channels",
         destination: "/admin/channels",
         permanent: false,

@@ -512,6 +512,16 @@ export function ContactsClient() {
                 </div>
               )}
               <input type="file" ref={fileInputRef} onChange={(e) => void handleImport(e)} accept=".csv" className="hidden" />
+              <button
+                type="button"
+                className="channel-secondary-btn inline-flex items-center gap-1.5"
+                disabled={loading}
+                onClick={() => void load(page, search, channelFilter, tagFilter)}
+                title="Refresh contacts"
+              >
+                <span aria-hidden="true" className={loading ? "animate-spin" : ""}>↻</span>
+                <span>{loading ? "Refreshing…" : "Refresh"}</span>
+              </button>
               <button type="button" className="channel-secondary-btn" disabled={importing} onClick={() => fileInputRef.current?.click()}>
                 {importing ? "Importing…" : "↓ Import CSV"}
               </button>

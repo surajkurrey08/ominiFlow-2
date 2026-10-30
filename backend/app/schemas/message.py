@@ -90,7 +90,7 @@ MAX_BUTTON_TITLE_LENGTH = 20
 class InteractiveHeader(BaseModel):
     """Optional header for an interactive message: text or a media object."""
 
-    type: Literal["text", "image", "video", "document"]
+    type: Literal["text", "image", "video", "document", "audio"]
     text: str | None = Field(default=None, max_length=MAX_HEADER_TEXT_LENGTH)
     # Storage key of a flow-uploaded asset (image/video/document headers).
     media_key: str | None = None

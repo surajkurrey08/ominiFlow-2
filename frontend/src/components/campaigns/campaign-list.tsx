@@ -39,12 +39,25 @@ export function CampaignList() {
           <h2 className="text-lg font-medium text-slate-900">Campaigns</h2>
           <p className="mt-1 text-sm text-slate-500">Manage your broadcast campaigns.</p>
         </div>
-        <Link
-          href="/campaigns/new"
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"
-        >
-          Create Campaign
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => void loadCampaigns()}
+            disabled={loading}
+            title="Refresh campaigns"
+            aria-label="Refresh campaigns"
+            className="inline-flex items-center gap-1.5 px-3 py-2 border border-slate-300 shadow-sm text-sm font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+          >
+            <span aria-hidden="true" className={`inline-block ${loading ? "animate-spin" : ""}`}>↻</span>
+            <span>{loading ? "Refreshing…" : "Refresh"}</span>
+          </button>
+          <Link
+            href="/campaigns/new"
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"
+          >
+            Create Campaign
+          </Link>
+        </div>
       </div>
 
       {campaigns.length === 0 ? (

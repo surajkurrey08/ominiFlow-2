@@ -158,3 +158,22 @@ export interface AdminAuditLogItem {
   result: string;
   ip_address: string | null;
 }
+
+export interface AdminPasswordResetItem {
+  id: string;
+  user_id: string;
+  email: string;
+  status: string;
+  requested_at: string | null;
+  reviewed_at: string | null;
+  user_name: string;
+  tenants: string[];
+}
+
+export interface AdminPasswordResetApproveResponse {
+  status: string;
+  email: string;
+  reset_url: string;
+  email_sent: boolean;
+}
+

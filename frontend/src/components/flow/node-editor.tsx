@@ -23,7 +23,7 @@ type ButtonKind = "reply" | "url" | "call";
 type ButtonOpt = { id: string; title: string; kind?: ButtonKind; url?: string; phoneNumber?: string };
 type ListOpt = { id: string; title: string; description?: string };
 type Condition = { source?: string; operator?: string; value?: string };
-type HeaderData = { type?: "none" | "text" | "image" | "video" | "document"; text?: string; mediaKey?: string; mediaUrl?: string; mediaName?: string };
+type HeaderData = { type?: "none" | "text" | "image" | "video" | "audio" | "document"; text?: string; mediaKey?: string; mediaUrl?: string; mediaName?: string };
 
 const BUTTON_KINDS: { value: ButtonKind; label: string }[] = [
   { value: "reply", label: "Custom (Reply)" },
@@ -35,6 +35,7 @@ const HEADER_TYPES: { value: NonNullable<HeaderData["type"]>; label: string }[] 
   { value: "text", label: "Text" },
   { value: "image", label: "Image" },
   { value: "video", label: "Video" },
+  { value: "audio", label: "Audio" },
   { value: "document", label: "Document" },
 ];
 
@@ -52,12 +53,13 @@ function TrashIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
 }
 
 export function NodeEditor({
-  node, onChange, onClose, onDuplicate,
+  node, onChange, onClose, onDuplicate, onDelete,
 }: {
   node: FlowNode;
   onChange: (patch: Record<string, unknown>) => void;
   onClose: () => void;
   onDuplicate: () => void;
+  onDelete?: () => void;
 }) {
   const d = node.data;
   const messageType = String(d.messageType ?? "text");
@@ -67,15 +69,31 @@ export function NodeEditor({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
+  const [refreshingTemplates, setRefreshingTemplates] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const headerFileRef = useRef<HTMLInputElement>(null);
   const [headerUploading, setHeaderUploading] = useState(false);
   const [headerUploadError, setHeaderUploadError] = useState("");
+
+  // Header config
+  const header = (d.header as HeaderData | undefined) ?? {};
+  const headerType = String(header.type ?? "none");
+  const setHeader = (patch: Partial<HeaderData>) => onChange({ header: { ...header, ...patch } });
+
+  const [headerMediaMode, setHeaderMediaMode] = useState<"upload" | "url">("upload");
+
+  useEffect(() => {
+    if (header.mediaUrl && !header.mediaKey) {
+      setHeaderMediaMode("url");
+    }
+  }, [node.id, header.type]);
   const isMedia = MEDIA_MESSAGE_TYPES.has(messageType);
   const isText = messageType === "text";
   const showMessageBox = ["text", "button", "list", "get_user_data", "audio", "document", "image", "video"].includes(messageType);
   const showHeaderFooter = showMessageBox;
-  const headerOptions = messageType === "button" ? HEADER_TYPES : HEADER_TYPES.filter((h) => h.value === "none" || h.value === "text");
+  const headerOptions = (messageType === "button" || messageType === "list")
+    ? HEADER_TYPES
+    : HEADER_TYPES.filter((h) => h.value === "none" || h.value === "text");
 
   useEffect(() => {
     if (messageType === "template" && templates.length === 0) {
@@ -101,10 +119,7 @@ export function NodeEditor({
     setVarOpen(false);
   }
 
-  // Header config
-  const header = (d.header as HeaderData | undefined) ?? {};
-  const headerType = String(header.type ?? "none");
-  const setHeader = (patch: Partial<HeaderData>) => onChange({ header: { ...header, ...patch } });
+
 
   async function uploadHeader(file: File) {
     setHeaderUploading(true);
@@ -144,6 +159,20 @@ export function NodeEditor({
           {currentTypeMeta?.label ?? "Configure Node"}
         </h3>
         <div className="flex items-center gap-1.5">
+          {onDelete && !d.isStart && (
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm("Are you sure you want to delete this node?")) {
+                  onDelete();
+                }
+              }}
+              title="Delete Node"
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer"
+            >
+              <TrashIcon className="w-4 h-4" />
+            </button>
+          )}
           <button
             type="button"
             onClick={onDuplicate}
@@ -285,18 +314,107 @@ export function NodeEditor({
               </div>
             )}
 
-            {(headerType === "image" || headerType === "video" || headerType === "document") && (
-              <div className="mt-2">
-                <input ref={headerFileRef} type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadHeader(f); }} />
-                <button
-                  type="button"
-                  onClick={() => headerFileRef.current?.click()}
-                  disabled={headerUploading}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 p-4 text-xs font-semibold text-slate-600 hover:border-blue-400 hover:bg-slate-50 transition"
-                >
-                  {headerUploading ? "Uploading..." : header.mediaName ? `📎 ${String(header.mediaName)}` : `⬆ Upload sample ${headerType}`}
-                </button>
-                {headerUploadError && <p className="mt-1 text-xs text-rose-600">{headerUploadError}</p>}
+            {(headerType === "image" || headerType === "video" || headerType === "audio" || headerType === "document") && (
+              <div className="space-y-2 mt-2">
+                {/* Upload vs URL Tabs */}
+                <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setHeaderMediaMode("upload")}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-lg transition ${
+                      headerMediaMode === "upload" ? "bg-white text-blue-600 shadow-xs" : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    <span>⬆</span> Upload File
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHeaderMediaMode("url")}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-lg transition ${
+                      headerMediaMode === "url" ? "bg-white text-blue-600 shadow-xs" : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    <span>🔗</span> Paste URL
+                  </button>
+                </div>
+
+                {headerMediaMode === "upload" ? (
+                  <div>
+                    <input
+                      ref={headerFileRef}
+                      type="file"
+                      className="hidden"
+                      accept={
+                        headerType === "image"
+                          ? "image/*"
+                          : headerType === "video"
+                          ? "video/*"
+                          : headerType === "audio"
+                          ? "audio/*"
+                          : ".pdf,.doc,.docx,.txt,.xls,.xlsx"
+                      }
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void uploadHeader(f);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => headerFileRef.current?.click()}
+                      disabled={headerUploading}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 p-4 text-xs font-semibold text-slate-600 hover:border-blue-400 hover:bg-slate-50 transition"
+                    >
+                      {headerUploading
+                        ? "Uploading..."
+                        : header.mediaName
+                        ? `📎 ${String(header.mediaName)}`
+                        : `⬆ Upload sample ${headerType}`}
+                    </button>
+                    {header.mediaUrl && (
+                      <a
+                        href={String(header.mediaUrl)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline"
+                      >
+                        View uploaded {headerType} ↗
+                      </a>
+                    )}
+                    {headerUploadError && <p className="mt-1 text-xs text-rose-600">{headerUploadError}</p>}
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <input
+                      type="url"
+                      value={String(header.mediaUrl ?? "")}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const guessedName = val.split("/").pop()?.split("?")[0] || `${headerType}_file`;
+                        setHeader({ mediaUrl: val, mediaName: guessedName, mediaKey: undefined });
+                      }}
+                      placeholder={
+                        headerType === "image"
+                          ? "https://example.com/banner.jpg"
+                          : headerType === "video"
+                          ? "https://example.com/promo.mp4"
+                          : headerType === "audio"
+                          ? "https://example.com/audio.mp3"
+                          : "https://example.com/document.pdf"
+                      }
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:border-blue-500 font-mono text-slate-800"
+                    />
+                    {header.mediaUrl && (
+                      <a
+                        href={String(header.mediaUrl)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline mt-1"
+                      >
+                        View / test link ↗
+                      </a>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -736,12 +854,18 @@ export function NodeEditor({
                   </label>
                   <button
                     type="button"
+                    disabled={refreshingTemplates}
                     onClick={() => {
-                      listTemplates({ page_size: 100 }).then((r) => setTemplates(r.items)).catch(() => {});
+                      setRefreshingTemplates(true);
+                      listTemplates({ page_size: 100 })
+                        .then((r) => setTemplates(r.items))
+                        .catch(() => {})
+                        .finally(() => setRefreshingTemplates(false));
                     }}
-                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-800"
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 disabled:opacity-50 cursor-pointer"
                   >
-                    ↻ Refresh
+                    <span className={refreshingTemplates ? "animate-spin" : ""}>↻</span>
+                    <span>{refreshingTemplates ? "Refreshing…" : "Refresh"}</span>
                   </button>
                 </div>
 
@@ -1241,6 +1365,24 @@ export function NodeEditor({
                 ))}
               </select>
             )}
+          </div>
+        )}
+
+        {/* Delete Node Action */}
+        {onDelete && !d.isStart && (
+          <div className="pt-4 border-t border-slate-100 pb-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm("Are you sure you want to delete this node?")) {
+                  onDelete();
+                }
+              }}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-rose-200 bg-rose-50/60 text-xs font-bold text-rose-600 hover:bg-rose-100 hover:text-rose-700 transition cursor-pointer shadow-2xs"
+            >
+              <TrashIcon className="w-3.5 h-3.5" />
+              <span>Delete Node</span>
+            </button>
           </div>
         )}
       </div>

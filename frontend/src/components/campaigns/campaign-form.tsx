@@ -589,9 +589,10 @@ export function CampaignForm() {
               type="button"
               onClick={handlePreview}
               disabled={previewing}
-              className="px-3 py-1 bg-white border border-slate-300 rounded-md font-semibold text-slate-700 hover:bg-slate-50 transition"
+              className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-300 rounded-md font-semibold text-xs text-slate-700 hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
             >
-              {previewing ? 'Recalculating...' : 'Refresh Count'}
+              <span aria-hidden="true" className={`inline-block ${previewing ? "animate-spin" : ""}`}>↻</span>
+              <span>{previewing ? 'Recalculating...' : 'Refresh Count'}</span>
             </button>
           </div>
         </div>

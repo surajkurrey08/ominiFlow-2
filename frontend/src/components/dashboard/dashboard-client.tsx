@@ -87,8 +87,8 @@ export function DashboardClient() {
           <h1 className="page-title mt-2">Good to have you back.</h1>
           <p className="page-subtitle mt-2">A live view of the conversations your team is handling.</p>
         </div>
-        <button type="button" className="dashboard-refresh" onClick={() => void refresh()} disabled={loading}>
-          <span aria-hidden="true">↻</span> {loading ? "Refreshing" : "Refresh"}
+        <button type="button" className="dashboard-refresh cursor-pointer disabled:opacity-60" onClick={() => void refresh()} disabled={loading}>
+          <span aria-hidden="true" className={`inline-block ${loading ? "animate-spin" : ""}`}>↻</span> {loading ? "Refreshing…" : "Refresh"}
         </button>
       </header>
 

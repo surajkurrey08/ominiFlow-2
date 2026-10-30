@@ -297,7 +297,7 @@ def _build_header(data: dict[str, Any], contact: Contact | None, variables: dict
     if htype == "text":
         text = _interpolate(str(header.get("text") or "").strip(), contact, variables)
         return InteractiveHeader(type="text", text=text[:60]) if text else None
-    if htype in ("image", "video", "document"):
+    if htype in ("image", "video", "document", "audio"):
         key = _asset_key(header)
         url = str(header.get("mediaUrl") or "").strip() if not key else None
         if not key and (not url or not url.startswith(("http://", "https://"))):
@@ -341,10 +341,16 @@ def _wrap_header_footer(text: str, data: dict[str, Any], contact: Contact | None
     WhatsApp only renders native header/footer on interactive messages."""
     parts: list[str] = []
     header = data.get("header")
-    if isinstance(header, dict) and str(header.get("type")) == "text":
-        htext = _interpolate(str(header.get("text") or "").strip(), contact, variables)
-        if htext:
-            parts.append(f"*{htext}*")
+    if isinstance(header, dict):
+        htype = str(header.get("type") or "")
+        if htype == "text":
+            htext = _interpolate(str(header.get("text") or "").strip(), contact, variables)
+            if htext:
+                parts.append(f"*{htext}*")
+        elif htype in ("image", "video", "audio", "document"):
+            url = str(header.get("mediaUrl") or "").strip()
+            if url:
+                parts.append(f"[{htype.title()}: {url}]")
     if text:
         parts.append(text)
     footer = _interpolate(str(data.get("footer") or "").strip(), contact, variables)
@@ -369,6 +375,24 @@ def _send_interactive(db: Session, session: FlowSession, node: dict[str, Any], c
         raise OutboundMessageError("No user to send as.")
     body = _interpolate(str(data.get("message") or "").strip(), contact, variables) or "Please choose an option."
     footer = _interpolate(str(data.get("footer") or "").strip(), contact, variables) or None
+    header = _build_header(data, contact, variables)
+    if header and header.type == "audio":
+        audio_key = uuid.uuid5(_NS, f"flow:{session.id}:{node.get('id')}:btn_audio")
+        try:
+            outbound_message_service.send_message(
+                db, session.tenant_id, actor, session.conversation_id,
+                MediaMessageCreate(
+                    type="media",
+                    media_type="audio",
+                    media_key=header.media_key,
+                    media_url=header.media_url,
+                    filename=header.filename,
+                ),
+                idempotency_key=audio_key,
+            )
+        except Exception as e:
+            logger.warning("Failed to send button audio header: %s", e)
+        header = None
     key = uuid.uuid5(_NS, f"flow:{session.id}:{node.get('id')}:interactive")
     try:
         outbound_message_service.send_message(
@@ -376,7 +400,7 @@ def _send_interactive(db: Session, session: FlowSession, node: dict[str, Any], c
             InteractiveMessageCreate(
                 type="interactive",
                 body=body[:1024],
-                header=_build_header(data, contact, variables),
+                header=header,
                 footer=(footer[:60] if footer else None),
                 buttons=_build_buttons(data),
             ),
@@ -411,7 +435,25 @@ def _send_interactive_list(db: Session, session: FlowSession, node: dict[str, An
 
     btn_text = str(data.get("buttonText") or "Select Option")[:20]
     header = _build_header(data, contact, variables)
-    if header and header.type != "text":
+    if header and header.type in ("image", "video", "audio", "document"):
+        media_key = uuid.uuid5(_NS, f"flow:{session.id}:{node.get('id')}:list_media")
+        try:
+            outbound_message_service.send_message(
+                db, session.tenant_id, actor, session.conversation_id,
+                MediaMessageCreate(
+                    type="media",
+                    media_type=header.type,
+                    media_key=header.media_key,
+                    media_url=header.media_url,
+                    filename=header.filename,
+                ),
+                idempotency_key=media_key,
+            )
+        except Exception as e:
+            logger.warning("Failed to send list header media: %s", e)
+        # Interactive list message in WhatsApp Cloud API only accepts text header
+        header = None
+    elif header and header.type != "text":
         header = None
 
     key = uuid.uuid5(_NS, f"flow:{session.id}:{node.get('id')}:list")

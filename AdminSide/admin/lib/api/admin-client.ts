@@ -6,6 +6,8 @@ import {
   AdminConversationItem,
   AdminDashboardStats,
   AdminMaintenance,
+  AdminPasswordResetApproveResponse,
+  AdminPasswordResetItem,
   AdminSettings,
   AdminSystemHealth,
   AdminTenantDetail,
@@ -406,4 +408,16 @@ export const adminApi = {
   async getMaintenance(): Promise<AdminMaintenance> {
     return fetchAdmin<AdminMaintenance>("/maintenance");
   },
+
+  // Password Resets
+  async getPasswordResets(): Promise<AdminPasswordResetItem[]> {
+    return fetchAdmin<AdminPasswordResetItem[]>("/password-resets");
+  },
+
+  async approvePasswordReset(requestId: string): Promise<AdminPasswordResetApproveResponse> {
+    return fetchAdmin<AdminPasswordResetApproveResponse>(`/password-resets/${encodeURIComponent(requestId)}/approve`, {
+      method: "POST",
+    });
+  },
 };
+

@@ -25,6 +25,7 @@ export function EcommerceClient() {
     isLoading,
     error,
     handleUpdateOrderStatus,
+    refresh,
   } = useEcommerce();
 
   const menuItems = [
@@ -46,6 +47,17 @@ export function EcommerceClient() {
             <h1 className="text-[26px] font-bold text-slate-800 leading-tight">E-commerce</h1>
             <p className="text-[15px] text-slate-500 mt-0.5">Manage your WhatsApp storefront, products, orders and payments</p>
           </div>
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={isLoading}
+            title="Refresh e-commerce data"
+            aria-label="Refresh e-commerce data"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold transition-colors disabled:opacity-50 cursor-pointer shadow-sm"
+          >
+            <span aria-hidden="true" className={isLoading ? "animate-spin" : ""}>↻</span>
+            <span>{isLoading ? "Refreshing…" : "Refresh"}</span>
+          </button>
         </div>
 
         {error && (

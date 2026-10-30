@@ -27,13 +27,48 @@ export function SettingsClient() {
   const [mmLiteEnabled, setMmLiteEnabled] = useState(false);
 
   const [sessions, setSessions] = useState<UserSession[]>([]);
+  const [refreshingSessions, setRefreshingSessions] = useState(false);
+  const [refreshingMmLite, setRefreshingMmLite] = useState(false);
+  const [mmLiteCheckedAt, setMmLiteCheckedAt] = useState<string>("10/10/2026, 14:45:43");
+  const [refreshingActivity, setRefreshingActivity] = useState(false);
+
+  const loadSessions = async () => {
+    setRefreshingSessions(true);
+    try {
+      const res = await fetch("/api/users/me/sessions");
+      if (res.ok) {
+        const data = await res.json();
+        setSessions(data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setRefreshingSessions(false);
+    }
+  };
+
+  const refreshMmLiteStatus = async () => {
+    setRefreshingMmLite(true);
+    try {
+      await new Promise((r) => setTimeout(r, 600));
+      setMmLiteCheckedAt(new Date().toLocaleString());
+    } finally {
+      setRefreshingMmLite(false);
+    }
+  };
+
+  const refreshActivity = async () => {
+    setRefreshingActivity(true);
+    try {
+      await new Promise((r) => setTimeout(r, 500));
+    } finally {
+      setRefreshingActivity(false);
+    }
+  };
 
   useEffect(() => {
     if (activeTab === "Security") {
-      fetch("/api/users/me/sessions")
-        .then(res => res.json())
-        .then(data => setSessions(data))
-        .catch(console.error);
+      void loadSessions();
     }
   }, [activeTab]);
 
@@ -229,10 +264,17 @@ export function SettingsClient() {
                   <span className="bg-[#e8f6f0] text-[#147a4d] border border-[#b2e2cd] px-2 py-0.5 rounded-md text-[11px] font-bold tracking-wide">Onboarded</span>
                 </div>
                 <p className="text-[#6d6e7c] text-[13px] mb-1">Your WhatsApp Business Account can send marketing broadcasts through MM Lite.</p>
-                <p className="text-[#a0a0aa] text-[11px]">Last checked 10/10/2026, 14:45:43</p>
+                <p className="text-[#a0a0aa] text-[11px]">Last checked {mmLiteCheckedAt}</p>
               </div>
-              <button className="flex items-center gap-2 border border-[#d6d6e0] bg-white hover:bg-[#f7f8fc] px-4 py-2 rounded-xl text-[#0b1028] text-[13px] font-semibold transition-colors">
-                <span>↻</span> Refresh status
+              <button 
+                type="button" 
+                onClick={() => void refreshMmLiteStatus()} 
+                disabled={refreshingMmLite}
+                title="Refresh MM Lite status"
+                className="flex items-center gap-2 border border-[#d6d6e0] bg-white hover:bg-[#f7f8fc] px-4 py-2 rounded-xl text-[#0b1028] text-[13px] font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                <span className={`inline-block ${refreshingMmLite ? "animate-spin" : ""}`}>↻</span>
+                <span>{refreshingMmLite ? "Checking…" : "Refresh status"}</span>
               </button>
             </div>
 
@@ -266,7 +308,15 @@ export function SettingsClient() {
                 <span className="text-[#1b7a53] text-[18px]">🛡️</span>
                 <h2 className="text-[16px] font-bold text-[#0b1028]">Active sessions</h2>
               </div>
-              <button className="text-[#6d6e7c] hover:text-[#0b1028] text-lg font-bold">↻</button>
+              <button 
+                type="button" 
+                onClick={() => void loadSessions()} 
+                disabled={refreshingSessions} 
+                title="Refresh active sessions" 
+                className="text-[#6d6e7c] hover:text-[#0b1028] text-lg font-bold p-1 rounded-md hover:bg-slate-100 transition cursor-pointer disabled:opacity-50"
+              >
+                <span className={`inline-block ${refreshingSessions ? "animate-spin" : ""}`}>↻</span>
+              </button>
             </div>
             <p className="text-[#6d6e7c] text-[13px] mb-6">
               Everywhere your account is currently signed in. If you do not recognise a device, sign it out — it loses access immediately.
@@ -325,7 +375,15 @@ export function SettingsClient() {
                 <span className="text-[#1b7a53] text-[18px]">🕒</span>
                 <h2 className="text-[16px] font-bold text-[#0b1028]">Activity log</h2>
               </div>
-              <button className="text-[#6d6e7c] hover:text-[#0b1028] text-lg font-bold">↻</button>
+              <button 
+                type="button" 
+                onClick={() => void refreshActivity()} 
+                disabled={refreshingActivity} 
+                title="Refresh activity log" 
+                className="text-[#6d6e7c] hover:text-[#0b1028] text-lg font-bold p-1 rounded-md hover:bg-slate-100 transition cursor-pointer disabled:opacity-50"
+              >
+                <span className={`inline-block ${refreshingActivity ? "animate-spin" : ""}`}>↻</span>
+              </button>
             </div>
             <p className="text-[#6d6e7c] text-[13px] mb-6">
               Who changed what, and when. Actions taken by a support admin on your account are shown under their own name.

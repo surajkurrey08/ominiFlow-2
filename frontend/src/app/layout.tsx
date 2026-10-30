@@ -23,6 +23,31 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if (typeof window !== 'undefined') {
+                window.addEventListener('unhandledrejection', function(e) {
+                  var reason = e && (e.reason || '');
+                  var msg = (reason && (reason.message || reason.stack || String(reason))) || '';
+                  if (msg.indexOf('MetaMask') !== -1 || msg.indexOf('chrome-extension://') !== -1) {
+                    e.stopImmediatePropagation();
+                    e.preventDefault();
+                  }
+                }, true);
+                window.addEventListener('error', function(e) {
+                  var msg = (e && (e.message || e.filename || '')) || '';
+                  if (msg.indexOf('MetaMask') !== -1 || msg.indexOf('chrome-extension://') !== -1) {
+                    e.stopImmediatePropagation();
+                    e.preventDefault();
+                  }
+                }, true);
+              }
+            `,
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );
