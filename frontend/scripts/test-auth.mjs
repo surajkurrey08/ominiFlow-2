@@ -65,13 +65,16 @@ describe("authentication form validation", () => {
   it("validates registration against backend field constraints", () => {
     const values = {
       email: "owner@example.test",
-      password: "synthetic-password",
-      confirmPassword: "synthetic-password",
+      password: "Synthetic-password",
+      confirmPassword: "Synthetic-password",
       firstName: "Sample",
       lastName: "User",
       tenantName: "Sample Workspace",
     };
     assert.equal(validation.validateRegistration(values), null);
+    assert.match(validation.validateRegistration({ ...values, password: "synthetic-password", confirmPassword: "synthetic-password" }), /uppercase/i);
+    assert.match(validation.validateRegistration({ ...values, password: "SyntheticPassword", confirmPassword: "SyntheticPassword" }), /special/i);
+    assert.match(validation.validateRegistration({ ...values, password: "Short!", confirmPassword: "Short!" }), /8 characters/i);
     assert.match(validation.validateRegistration({ ...values, confirmPassword: "different-password" }), /match/i);
     assert.match(validation.validateRegistration({ ...values, tenantName: "x" }), /workspace/i);
   });

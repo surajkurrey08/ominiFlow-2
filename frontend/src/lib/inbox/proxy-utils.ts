@@ -110,8 +110,10 @@ export function buildInboxProxyTarget(
     UUID_PATTERN.test(segments[1]) &&
     segments[2] === "templates"
   ) {
-    const page = positiveInt(params.get("page"), 1, 1_000_000) ?? 1;
-    const pageSize = positiveInt(params.get("page_size"), 100, 100) ?? 100;
+    for (const key of params.keys()) if (key !== "page" && key !== "page_size") return null;
+    const page = positiveInt(params.get("page"), 1, 1_000_000);
+    const pageSize = positiveInt(params.get("page_size"), 100, 100);
+    if (page === null || pageSize === null) return null;
     return {
       backendPath: `/channels/${segments[1]}/templates`,
       query: new URLSearchParams({ page: String(page), page_size: String(pageSize) }),

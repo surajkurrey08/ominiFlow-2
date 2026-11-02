@@ -68,7 +68,19 @@ describe("Inbox proxy allowlist", () => {
     );
     assert.equal(templates.kind, "templates");
     assert.equal(templates.backendPath, `/channels/${uuid}/templates`);
-    assert.equal(buildInboxProxyTarget("GET", ["channels", uuid, "templates"], new URLSearchParams("page=1")), null);
+  });
+
+  it("defaults template pagination and rejects invalid filters and page values", () => {
+    const segments = ["channels", uuid, "templates"];
+    for (const params of ["", "page=1", "page_size=100"]) {
+      const target = buildInboxProxyTarget("GET", segments, new URLSearchParams(params));
+      assert.equal(target.query.toString(), "page=1&page_size=100");
+    }
+    const pageTwo = buildInboxProxyTarget("GET", segments, new URLSearchParams("page=2&page_size=25"));
+    assert.equal(pageTwo.query.toString(), "page=2&page_size=25");
+    for (const params of ["page=0", "page=invalid", "page=1000001", "page_size=0", "page_size=101", "url=https://bad.example"]) {
+      assert.equal(buildInboxProxyTarget("GET", segments, new URLSearchParams(params)), null);
+    }
   });
 });
 
