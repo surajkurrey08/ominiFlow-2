@@ -1,22 +1,26 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { backendApiUrl } from "@/lib/auth/backend";
 import { getSessionAccessToken } from "@/lib/auth/session";
-import { SESSION_COOKIE_NAME } from "@/lib/auth/session-utils";
+import { REFRESH_COOKIE_NAME } from "@/lib/auth/session-utils";
+import { clearSessionCookies, isSameOrigin } from "@/lib/auth/refresh";
 
 export const runtime = "nodejs";
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+  if (!isSameOrigin(request)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
   const token = await getSessionAccessToken();
-  let serverSessionRevoked = !token;
-  if (token) {
+  const refresh = request.cookies.get(REFRESH_COOKIE_NAME)?.value;
+  let serverSessionRevoked = !token && !refresh;
+  if (token || refresh) {
     try {
-      const upstream = await fetch(backendApiUrl("/auth/logout"), {
+      const upstream = await fetch(backendApiUrl(refresh ? "/auth/revoke" : "/auth/logout"), {
         method: "POST",
         headers: {
           Accept: "application/json",
-          Authorization: `Bearer ${token}`,
+          ...(refresh ? { "Content-Type": "application/json" } : { Authorization: `Bearer ${token}` }),
         },
+        ...(refresh ? { body: JSON.stringify({ refresh_token: refresh }) } : {}),
         cache: "no-store",
         signal: AbortSignal.timeout(5000),
       });
@@ -27,12 +31,6 @@ export async function POST() {
   }
 
   const response = NextResponse.json({ success: true, server_session_revoked: serverSessionRevoked });
-  response.cookies.set(SESSION_COOKIE_NAME, "", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 0,
-  });
+  clearSessionCookies(response);
   return response;
 }

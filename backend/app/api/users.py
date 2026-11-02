@@ -3,7 +3,7 @@ import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.dependencies import (
@@ -13,7 +13,7 @@ from app.api.dependencies import (
     DbSession,
     require_permission,
 )
-from app.core.security import create_access_token
+from app.services.session_service import issue_session_tokens
 from app.schemas.auth import AuthResponse
 from app.schemas.team import (
     InvitationAcceptRequest,
@@ -248,6 +248,7 @@ def revoke_invitation(
     response_model=AuthResponse,
 )
 def accept_invitation(
+    request: Request,
     data: InvitationAcceptRequest,
     db: DbSession,
 ):
@@ -258,16 +259,17 @@ def accept_invitation(
     with handle_service_errors():
         user, tenant = user_service.accept_invitation(db, data)
 
-    access_token = create_access_token(
-        subject=str(user.id),
-        extra_claims={
-            "tenant_id": str(tenant.id),
-        },
+    user_session = UserSession(
+        user_id=user.id,
+        user_agent=request.headers.get("user-agent", ""),
+        ip_address=request.client.host if request.client else None,
     )
+    db.add(user_session)
+    tokens = issue_session_tokens(db, user_session, tenant.id)
+    db.commit()
 
     return AuthResponse(
-        access_token=access_token,
-        token_type="bearer",
+        **tokens,
         user=user,
         tenant=tenant,
     )

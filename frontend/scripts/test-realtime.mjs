@@ -122,4 +122,25 @@ describe("InboxEventStreamClient cookie-backed bridge", () => {
     assert.equal(client.state, "disconnected");
     client.disconnect();
   });
+
+  it("reconnects after normal access expiry so the auth proxy can refresh", async () => {
+    FakeEventSource.instances = [];
+    const failures = [];
+    const client = createInboxEventStream({
+      initialBackoffMs: 1, maxBackoffMs: 1,
+      onAuthError: (code) => failures.push(code),
+      eventSourceFactory: (url) => new FakeEventSource(url),
+    });
+    try {
+      client.connect();
+      const source = FakeEventSource.instances[0];
+      source.open();
+      source.listeners.get("token_expired")?.({ data: "{}" });
+      assert.equal(source.closed, true);
+      assert.equal(client.state, "reconnecting");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.equal(FakeEventSource.instances.length, 2);
+      assert.deepEqual(failures, []);
+    } finally { client.disconnect(); }
+  });
 });

@@ -23,6 +23,8 @@ from app.schemas.auth import (
     PasswordResetRequestResponse,
     PasswordResetStatusResponse,
     RegisterRequest,
+    RefreshRequest,
+    SessionTokenResponse,
 )
 from app.services.auth_service import (
     EmailAlreadyExistsError,
@@ -41,9 +43,30 @@ from app.services.auth_service import (
     register_user,
 )
 
-logger = logging.getLogger(__name__)
+from app.services.session_service import (
+    InvalidRefreshTokenError, issue_session_tokens, refresh_session, revoke_refresh_session,
+)
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+@router.post("/refresh", response_model=SessionTokenResponse)
+def refresh(data: RefreshRequest, db: DbSession, response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return refresh_session(db, data.refresh_token)
+    except InvalidRefreshTokenError:
+        raise HTTPException(status_code=401, detail="Your session has expired. Sign in again.") from None
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Session renewal is temporarily unavailable.") from None
+
+
+@router.post("/revoke", status_code=status.HTTP_204_NO_CONTENT)
+def revoke(data: RefreshRequest, db: DbSession):
+    revoke_refresh_session(db, data.refresh_token)
+    return Response(status_code=204)
 
 
 @router.get("/platform-admin/status", response_model=PasswordResetStatusResponse)
@@ -200,6 +223,7 @@ def register(
 )
 def login(
     request: Request,
+    response: Response,
     data: LoginRequest,
     db: Session = Depends(get_db),
 ):
@@ -243,20 +267,12 @@ def login(
         device_info=device_info,
     )
     db.add(user_session)
+    tokens = issue_session_tokens(db, user_session, tenant.id)
     db.commit()
-    db.refresh(user_session)
-
-    access_token = create_access_token(
-        subject=str(user.id),
-        extra_claims={
-            "tenant_id": str(tenant.id),
-            "session_id": str(user_session.id),
-        },
-    )
+    response.headers["Cache-Control"] = "no-store"
 
     return AuthResponse(
-        access_token=access_token,
-        token_type="bearer",
+        **tokens,
         user=user,
         tenant=tenant,
     )

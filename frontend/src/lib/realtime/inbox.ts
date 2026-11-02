@@ -221,6 +221,12 @@ export class InboxEventStreamClient {
       }
       this.eventHandlers.forEach((handler) => handler(event));
     };
+    source.addEventListener("token_expired", () => {
+      if (this.source !== source || this.stopped) return;
+      source.close();
+      this.source = null;
+      this.scheduleReconnect(); // The auth proxy renews cookies before the next stream opens.
+    });
     source.addEventListener("auth_error", (rawEvent) => {
       if (this.source !== source) return;
       const message = rawEvent as MessageEvent<string>;

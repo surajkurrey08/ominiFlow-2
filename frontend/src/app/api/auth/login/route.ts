@@ -3,8 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { backendApiUrl, isRecord, parseJson } from "@/lib/auth/backend";
 import { sessionCookieOptions, tokenMaxAgeSeconds, SESSION_COOKIE_NAME } from "@/lib/auth/session-utils";
 import { validateLogin } from "@/lib/auth/validation";
+import { clearSessionCookies, isSameOrigin, parseSessionTokens, setSessionCookies } from "@/lib/auth/refresh";
 
 export async function POST(request: NextRequest) {
+  if (!isSameOrigin(request)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
   const body: unknown = await request.json().catch(() => null);
   if (!isRecord(body) || typeof body.email !== "string" || typeof body.password !== "string") {
     return NextResponse.json({ error: "Enter your email and password." }, { status: 400 });
@@ -52,6 +54,16 @@ export async function POST(request: NextRequest) {
   }
 
   const response = NextResponse.json({ success: true });
+  const tokens = parseSessionTokens(payload);
+  if (payload.refresh_token && !tokens) {
+    return NextResponse.json({ error: "The sign-in response was invalid." }, { status: 502 });
+  }
+  if (tokens) {
+    setSessionCookies(response, tokens);
+    return response;
+  }
+  // Compatibility with an older backend during a rolling deployment.
+  clearSessionCookies(response);
   response.cookies.set(
     SESSION_COOKIE_NAME,
     payload.access_token,

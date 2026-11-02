@@ -1,4 +1,11 @@
 export const SESSION_COOKIE_NAME = "omniflow_session";
+export const REFRESH_COOKIE_NAME = "omniflow_refresh";
+
+export function needsSessionRefresh(token: string | undefined, nowSeconds = Date.now() / 1000) {
+  if (!token) return true;
+  const remaining = tokenMaxAgeSeconds(token, nowSeconds);
+  return remaining === null || remaining <= 60;
+}
 
 export interface TokenClaims {
   sub?: unknown;

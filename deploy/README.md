@@ -390,6 +390,25 @@ bash deploy/setup-gateway.sh restore .deployment/releases/RELEASE_TAG/gateway.be
 The helper backs up and tests that restore before reload. Never copy a whole
 historic gateway snapshot over newer unrelated site changes.
 
+## Workspace login sessions
+
+New workspace sign-ins and invitation sign-ins use a short access token and a
+rotating refresh token in separate HttpOnly cookies. Defaults are
+`SESSION_ACCESS_TOKEN_EXPIRE_MINUTES=15`,
+`SESSION_INACTIVITY_TIMEOUT_HOURS=168`, and `REFRESH_TOKEN_EXPIRE_DAYS=30`.
+The 30-day refresh expiry is absolute; refreshing alone does not extend the
+inactivity window. Explicit values in the VPS `.env` override these defaults.
+`ACCESS_TOKEN_EXPIRE_MINUTES` continues to govern legacy and platform-admin
+tokens; the separate admin application is unchanged.
+
+The normal deployment applies migration `fa0b1c2d3e4f` before replacing app
+containers. It only creates the refresh-token table; existing access tokens
+remain valid until their original expiry. Existing users need to sign in once
+to receive refresh cookies. Keep `JWT_SECRET` stable across backend instances
+and ordinary deployments. Logout, device-session revocation, and password reset
+invalidate the linked refresh session. CI runs the isolated refresh tests
+before deployment.
+
 ## Repository files
 
 - `.github/workflows/deploy.yml`: validation and exact-commit SSH deployment.

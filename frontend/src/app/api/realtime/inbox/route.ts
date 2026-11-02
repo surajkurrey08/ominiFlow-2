@@ -1,9 +1,9 @@
 import WebSocket from "ws";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { backendApiUrl } from "@/lib/auth/backend";
 import { getSessionAccessToken } from "@/lib/auth/session";
-import { SESSION_COOKIE_NAME } from "@/lib/auth/session-utils";
+import { REFRESH_COOKIE_NAME, readUnverifiedTokenClaims, SESSION_COOKIE_NAME } from "@/lib/auth/session-utils";
 
 export const runtime = "nodejs";
 
@@ -50,9 +50,11 @@ function eventFrame(raw: string) {
   return `${id ? `id: ${id}\n` : ""}data: ${raw}\n\n`;
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const token = await getSessionAccessToken();
   if (!token || token.length > 8192) return authenticationFailure();
+  const expiresAt = readUnverifiedTokenClaims(token)?.exp;
+  const canRenew = request.cookies.has(REFRESH_COOKIE_NAME);
 
   const upstreamUrl = backendApiUrl("/ws/inbox");
   if (upstreamUrl.protocol === "https:") upstreamUrl.protocol = "wss:";
@@ -70,12 +72,12 @@ export async function GET(request: Request) {
         }
       }, KEEPALIVE_MS);
 
-      const finish = (authCode?: number) => {
+      const finish = (authCode?: number, renew = false) => {
         if (ended) return;
         ended = true;
         clearInterval(heartbeat);
         if (authCode !== undefined) {
-          const payload = `event: auth_error\ndata: ${JSON.stringify({ code: authCode })}\n\n`;
+          const payload = `event: ${renew ? "token_expired" : "auth_error"}\ndata: ${JSON.stringify({ code: authCode })}\n\n`;
           try { controller.enqueue(encoder.encode(payload)); } catch { /* Stream already closed. */ }
         }
         try { controller.close(); } catch { /* Client already cancelled. */ }
@@ -109,7 +111,9 @@ export async function GET(request: Request) {
           }
         });
         socket.once("close", (code) => {
-          if (code === 4401 || code === 4403) finish(code);
+          if (code === 4401 || code === 4403) finish(code,
+            code === 4401 && canRenew && typeof expiresAt === "number" && expiresAt <= Date.now() / 1000,
+          );
           else finish();
         });
         socket.once("error", abort);

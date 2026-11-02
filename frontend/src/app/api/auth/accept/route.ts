@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { backendApiUrl, isRecord, parseJson } from "@/lib/auth/backend";
 import { sessionCookieOptions, tokenMaxAgeSeconds, SESSION_COOKIE_NAME } from "@/lib/auth/session-utils";
+import { clearSessionCookies, isSameOrigin, parseSessionTokens, setSessionCookies } from "@/lib/auth/refresh";
 
 // Accept a team invitation. The invitation token is the credential; on
 // success the backend returns an access token, which we store in the
 // HttpOnly session cookie exactly like sign-in. The raw token is only ever
 // forwarded server-side and never logged.
 export async function POST(request: NextRequest) {
+  if (!isSameOrigin(request)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
   const body: unknown = await request.json().catch(() => null);
   if (!isRecord(body) || typeof body.token !== "string" || typeof body.password !== "string") {
     return NextResponse.json({ error: "Enter and confirm a password to accept your invitation." }, { status: 400 });
@@ -53,6 +55,13 @@ export async function POST(request: NextRequest) {
   }
 
   const response = NextResponse.json({ success: true });
+  const tokens = parseSessionTokens(payload);
+  if (payload.refresh_token && !tokens) return NextResponse.json({ error: "The invitation response was invalid." }, { status: 502 });
+  if (tokens) {
+    setSessionCookies(response, tokens);
+    return response;
+  }
+  clearSessionCookies(response);
   response.cookies.set(
     SESSION_COOKIE_NAME,
     payload.access_token,

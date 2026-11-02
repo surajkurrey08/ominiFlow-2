@@ -25,7 +25,9 @@ class Settings(BaseSettings):
     jwt_secret: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 43200  # 30 days token lifespan
-    session_inactivity_timeout_hours: int = 24  # Session expires only after 24 hours of inactivity
+    session_inactivity_timeout_hours: int = Field(default=168, ge=1)
+    session_access_token_expire_minutes: int = Field(default=15, ge=1)
+    refresh_token_expire_days: int = Field(default=30, ge=1)
 
     invitation_expire_hours: int = 72
     password_reset_expire_minutes: int = 60

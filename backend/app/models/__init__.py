@@ -51,6 +51,7 @@ from app.models.campaign import Campaign, CampaignStatus
 from app.models.campaign_recipient import CampaignRecipient, CampaignRecipientStatus
 from app.models.knowledge_base import KnowledgeBase, KnowledgeDocument
 from app.models.user_session import UserSession
+from app.models.session_refresh_token import SessionRefreshToken
 from app.models.password_reset_request import PasswordResetRequest
 from app.models.flow import Flow, FlowStatus
 from app.models.flow_session import FlowSession, FlowSessionStatus, FlowSessionWait

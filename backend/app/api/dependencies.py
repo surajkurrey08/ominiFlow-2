@@ -110,16 +110,16 @@ def get_current_user(
     session_id = _parse_uuid(payload.get("session_id"))
     if session_id:
         user_session = db.get(UserSession, session_id)
-        if not user_session or not user_session.is_active:
+        if not user_session or not user_session.is_active or user_session.user_id != user_id:
             raise _credentials_exception()
 
         now = datetime.now(timezone.utc)
-        timeout_hours = getattr(settings, "session_inactivity_timeout_hours", 24)
+        timeout_hours = settings.session_inactivity_timeout_hours
         if user_session.last_active_at:
             last_active = user_session.last_active_at
             if last_active.tzinfo is None:
                 last_active = last_active.replace(tzinfo=timezone.utc)
-            # Expire session only if no activity for 24 hours
+            # Enforce the configured inactivity limit independently of JWT expiry.
             if (now - last_active) > timedelta(hours=timeout_hours):
                 user_session.is_active = False
                 db.commit()

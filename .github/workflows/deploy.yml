@@ -55,7 +55,8 @@ jobs:
         run: |
           docker run --rm --network none --env-file .env \
             -v "$PWD/backend/tests/test_startup.py:/app/test_startup.py:ro" \
-            fmfilms-backend:local python -m unittest test_startup -v
+            -v "$PWD/backend/tests/test_session_refresh.py:/app/test_session_refresh.py:ro" \
+            fmfilms-backend:local python -m unittest test_startup test_session_refresh -v
       - name: Smoke test production containers and migrations
         run: |
           docker network create lovenzea_default

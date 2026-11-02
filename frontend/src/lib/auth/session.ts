@@ -75,7 +75,7 @@ export async function getAuthContext(): Promise<AuthContext | null> {
     authenticatedGet("/auth/platform-admin/status", token),
   ]);
 
-  if ([tenantResponse.status, userResponse.status, adminResponse.status].some((status) => status === 401 || status === 403 || status === 404)) {
+  if ([tenantResponse.status, userResponse.status, adminResponse.status].some((status) => status === 401)) {
     return null;
   }
   if (!tenantResponse.ok || !userResponse.ok || !adminResponse.ok) throw new AuthBackendUnavailableError();

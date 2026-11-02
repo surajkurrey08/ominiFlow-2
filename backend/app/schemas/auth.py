@@ -17,6 +17,17 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=32, max_length=256, repr=False)
+
+
+class SessionTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    refresh_token: str = Field(repr=False)
+    refresh_expires_at: datetime
+
+
 class PasswordResetRequestCreate(BaseModel):
     email: EmailStr
 
@@ -62,3 +73,5 @@ class AuthResponse(BaseModel):
     token_type: str = "bearer"
     user: UserResponse
     tenant: TenantResponse
+    refresh_token: str | None = Field(default=None, repr=False)
+    refresh_expires_at: datetime | None = None
