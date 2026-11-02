@@ -13,6 +13,24 @@ import { createInboxEventStream, type InboxConnectionState } from "@/lib/realtim
 const PAGE_SIZE = 25;
 const MESSAGE_PAGE_SIZE = 100;
 
+function InboxIcon({ name }: { name: "search" | "filter" | "refresh" | "info" | "close" | "back" | "send" | "template" }) {
+  const paths = {
+    search: <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></>,
+    filter: <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="2" /><circle cx="15" cy="17" r="2" /></>,
+    refresh: <><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6.1 7a7 7 0 0 1 11.5-2L20 8M4 16l2.4 3A7 7 0 0 0 18 17" /></>,
+    info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7v.01" /></>,
+    close: <path d="m6 6 12 12M6 18 18 6" />,
+    back: <path d="m12 5-7 7 7 7M5 12h15" />,
+    send: <><path d="m21 3-6.5 18-4-7.5L3 9.5 21 3Z" /><path d="m10.5 13.5 5-5" /></>,
+    template: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
+  };
+  return <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+}
+
+function contactInitial(name: string | null | undefined) {
+  return name?.match(/[\p{L}\p{N}]/u)?.[0].toUpperCase() || "?";
+}
+
 interface InboxClientProps {
   initialConversationId: string | null;
 }
@@ -59,10 +77,6 @@ function mergeMessages(current: Message[], incoming: Message[]) {
     const bTime = new Date(b.sent_at ?? b.created_at).getTime();
     return aTime - bTime || a.id.localeCompare(b.id);
   });
-}
-
-function contactLine(conversation: Conversation) {
-  return conversation.contact.phone_number ?? conversation.channel.name;
 }
 
 function supportsInboxTemplate(template: InboxTemplateOption) {
@@ -121,7 +135,8 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
   const [templateMediaFile, setTemplateMediaFile] = useState<File | null>(null);
   const [templateBusy, setTemplateBusy] = useState(false);
   const [showContactDetails, setShowContactDetails] = useState(false);
-  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const detailsToggleRef = useRef<HTMLButtonElement>(null);
 
   const selectedIdRef = useRef(selectedId);
   const selectedConversationRef = useRef(selectedConversation);
@@ -535,10 +550,11 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const canLoadEarlier = messages.length < messageTotal;
   const liveLabel = liveState === "connected"
-    ? "Live updates on"
+    ? "Live"
     : liveState === "connecting" || liveState === "reconnecting"
-      ? "Reconnecting to live updates"
-      : "Live updates offline";
+      ? "Connecting"
+      : "Offline";
+  const activeFilterCount = [statusFilter !== "all", unreadFilter !== "all", Boolean(channelFilter), Boolean(assigneeFilter)].filter(Boolean).length;
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -554,50 +570,39 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
   return (
     <section className="inbox-page page-enter" aria-label="WhatsApp inbox">
       <div className="inbox-heading">
-        <div className="flex items-center gap-2.5">
-          <h1 className="text-xl font-bold tracking-tight text-slate-900">Inbox</h1>
-          <span className="h-4 w-px bg-slate-300 hidden sm:inline" aria-hidden="true" />
-          <p className="text-xs text-slate-500 hidden sm:inline">Customer conversations across your connected channels</p>
-        </div>
+        <h1>Inbox</h1>
         <div className="inbox-heading-actions">
-          <span className={`live-indicator ${liveState === "connected" ? "live-indicator-on" : ""}`}>
-            <span />{liveLabel}
+          <span className={`live-indicator ${liveState === "connected" ? "live-indicator-on" : ""}`} role="status" title={liveState === "connected" ? "Live updates connected" : "Live updates are reconnecting"}>
+            <span aria-hidden="true" />{liveLabel}
           </span>
           <button type="button" className="refresh-button" disabled={listLoading} onClick={() => {
             void loadConversations(true);
             if (selectedIdRef.current) void refreshThread(selectedIdRef.current);
           }} aria-label="Refresh conversations and messages" title="Refresh inbox">
-            <span aria-hidden="true" className={listLoading ? "animate-spin" : ""}>↻</span>
-            <span className="refresh-label">{listLoading ? "Refreshing…" : "Refresh"}</span>
+            <span className={listLoading ? "animate-spin" : ""}><InboxIcon name="refresh" /></span>
           </button>
         </div>
       </div>
 
       {liveMessage && <p role="status" className="inbox-live-warning">{liveMessage}</p>}
 
-      <div className={`inbox-layout grid min-h-0 grid-cols-1 overflow-hidden rounded-xl border border-slate-200 bg-white transition-all ${
-        showContactDetails
-          ? "md:grid-cols-[260px_1fr] xl:grid-cols-[260px_1fr_260px]"
-          : "md:grid-cols-[270px_1fr]"
-      } ${mobileThread ? "inbox-has-selection" : ""}`}>
+      <div className={`inbox-layout ${showContactDetails ? "inbox-details-open" : ""} ${mobileThread ? "inbox-has-selection" : ""}`}>
         <aside className={`conversation-pane min-h-0 flex-col border-r border-slate-200 ${mobileThread ? "hidden md:flex" : "flex"}`} aria-label="Conversation list">
           <div className="conversation-pane-header">
             <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-base font-semibold text-slate-900">Conversations</h2>
-                <p className="mt-1 text-xs text-slate-500">{total.toLocaleString()} total</p>
-              </div>
-              <span className="channel-pill"><span /> Channels</span>
+              <h2 className="conversation-heading">Conversations <span>{total.toLocaleString()}</span></h2>
             </div>
 
-            <form className="inbox-search" onSubmit={submitSearch} role="search">
+            <form className="inbox-search" onSubmit={submitSearch} role="search" noValidate>
               <label className="sr-only" htmlFor="inbox-search">Search conversations</label>
-              <span aria-hidden="true">⌕</span>
-              <input id="inbox-search" value={searchInput} maxLength={100} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search contacts or subject" />
-              {searchInput && <button type="button" onClick={() => { setSearchInput(""); setAppliedSearch(""); setPage(1); }} aria-label="Clear search">×</button>}
+              <span><InboxIcon name="search" /></span>
+              <input ref={searchRef} id="inbox-search" value={searchInput} maxLength={100} onChange={(event) => setSearchInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && event.nativeEvent.isComposing) event.preventDefault(); }} placeholder="Search conversations" />
+              {searchInput && <button type="button" onClick={() => { setSearchInput(""); setAppliedSearch(""); setPage(1); searchRef.current?.focus(); }} aria-label="Clear search"><InboxIcon name="close" /></button>}
             </form>
 
-            <div className="inbox-filter-grid">
+            <details className="inbox-filters">
+              <summary><InboxIcon name="filter" /><span>Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}</span><span className="filter-chevron" aria-hidden="true">⌄</span></summary>
+              <div className="inbox-filter-grid">
               <label>
                 <span>Status</span>
                 <select value={statusFilter} onChange={(event) => updateFilter(setStatusFilter, event.target.value as ConversationStatus | "all")}>
@@ -625,7 +630,8 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
                   {users.map((user) => <option key={user.id} value={user.id}>{[user.first_name, user.last_name].filter(Boolean).join(" ") || user.role}</option>)}
                 </select>
               </label>
-            </div>
+              </div>
+            </details>
           </div>
 
           {listError ? (
@@ -658,30 +664,20 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
                   onClick={() => selectConversation(conversation)}
                   aria-current={selectedId === conversation.id ? "true" : undefined}
                 >
-                  <span className="contact-avatar" aria-hidden="true">{(conversation.contact.name || "?").trim().slice(0, 1).toUpperCase()}</span>
+                  <span className="contact-avatar" aria-hidden="true">{contactInitial(conversation.contact.name)}</span>
                   <span className="conversation-row-content">
                     <span className="conversation-row-top">
                       <span className="conversation-contact">{conversation.contact.name || "Unknown contact"}</span>
                       <time className="conversation-time" dateTime={conversation.last_message_at ?? conversation.updated_at}>{shortTime(conversation.last_message_at ?? conversation.updated_at)}</time>
                     </span>
-                    <span className="conversation-row-middle">
-                      <span className="conversation-phone">{contactLine(conversation)}</span>
-                      <div className="flex items-center gap-1">
-                        <span className={`status-tag status-${conversation.status}`}>{conversation.status}</span>
-                        <span className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                          conversation.mode === "human"
-                            ? "bg-blue-50 text-blue-700 border border-blue-200"
-                            : "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                        }`} title={conversation.mode === "human" ? "Human Mode (Manual)" : "Chatbot Mode (Flow/AI)"}>
-                          {conversation.mode === "human" ? "👤 Human" : "🤖 Bot"}
-                        </span>
-                      </div>
-                    </span>
                     <span className="conversation-row-bottom">
                       <span className="conversation-preview">{conversationPreview(conversation)}</span>
                       {conversation.unread_count > 0 && <span className="unread-count" aria-label={`${conversation.unread_count} unread messages`}>{conversation.unread_count > 99 ? "99+" : conversation.unread_count}</span>}
                     </span>
-                    <span className="conversation-channel">{conversation.channel.name}{conversation.assigned_user ? ` · ${conversation.assigned_user.first_name}` : " · Unassigned"}</span>
+                    <span className="conversation-row-details">
+                      <span className="conversation-channel">{conversation.channel.name}{conversation.assigned_user ? ` · ${conversation.assigned_user.first_name}` : ""}</span>
+                      <span className="conversation-mode" title={conversation.mode === "human" ? "Human replies" : "Chatbot replies"}>{conversation.mode === "human" ? "Human" : "Bot"}</span>
+                    </span>
                   </span>
                 </button>
               ))}
@@ -701,180 +697,46 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
           {selectedConversation ? (
             <>
               <header className="thread-header">
-                <button type="button" className="thread-back" onClick={() => setMobileThread(false)} aria-label="Back to conversations">←</button>
-                <button
-                  type="button"
-                  onClick={() => setShowContactDetails((open) => !open)}
-                  className="contact-avatar contact-avatar-thread hover:ring-2 hover:ring-indigo-400 hover:opacity-90 transition cursor-pointer"
-                  title="Click to view contact details"
-                  aria-label="View contact details"
-                >
-                  {(selectedConversation.contact.name || "?").trim().slice(0, 1).toUpperCase()}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowContactDetails((open) => !open)}
-                  className="group min-w-0 flex-1 text-left cursor-pointer transition"
-                  title="Click to view contact details"
-                >
-                  <div className="flex items-center gap-2">
-                    <h2 className="truncate text-sm font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">
-                      {selectedConversation.contact.name || "Unknown contact"}
-                    </h2>
-                    <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold transition ${
-                      showContactDetails ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-500 group-hover:bg-indigo-50 group-hover:text-indigo-600"
-                    }`}>
-                      ℹ️ {showContactDetails ? "Hide Info" : "View Info"}
-                    </span>
-                  </div>
-                  <p className="mt-0.5 truncate text-xs text-slate-500">{selectedConversation.contact.phone_number ?? "Phone unavailable"}</p>
-                </button>
-                <div className="thread-header-meta">
-                  <span className="thread-channel">{selectedConversation.channel.name}</span>
-                  <span className={`status-tag status-${selectedConversation.status}`}>{selectedConversation.status}</span>
-                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                    selectedConversation.mode === "human"
-                      ? "bg-blue-100 text-blue-800 border border-blue-200"
-                      : "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                  }`}>
-                    {selectedConversation.mode === "human" ? "👤 Human Mode" : "🤖 Chatbot Mode"}
-                  </span>
+                <button type="button" className="thread-back" onClick={() => setMobileThread(false)} aria-label="Back to conversations"><InboxIcon name="back" /></button>
+                <span className="contact-avatar contact-avatar-thread" aria-hidden="true">{contactInitial(selectedConversation.contact.name)}</span>
+                <div className="thread-contact">
+                  <h2>{selectedConversation.contact.name || "Unknown contact"}</h2>
+                  <p>{selectedConversation.contact.phone_number || "Phone unavailable"}<span aria-hidden="true"> · </span>{selectedConversation.channel.name}</p>
                 </div>
+                <button ref={detailsToggleRef} type="button" className={`inbox-icon-button ${showContactDetails ? "inbox-icon-button-active" : ""}`} onClick={() => setShowContactDetails((open) => !open)} aria-label="Contact details" aria-expanded={showContactDetails} aria-controls="inbox-contact-details" title="Contact details"><InboxIcon name="info" /></button>
               </header>
 
-              <div className="flex flex-wrap items-center gap-2.5 border-b border-slate-200 bg-white px-3.5 py-1 text-xs">
-                <label className="flex items-center gap-1.5 text-slate-600">
-                  <span className="font-medium text-slate-500">Assignee</span>
-                  <select aria-label="Assign conversation" className="h-6 rounded border border-slate-200 bg-slate-50 px-1 text-xs text-slate-700" value={selectedConversation.assigned_user?.id ?? ""}
-                    onChange={(event) => void assignInboxConversation(selectedConversation.id, event.target.value || null)
-                      .then(updateConversation).catch((error) => setSendError(error instanceof Error ? error.message : "Assignment could not be changed."))}>
-                    <option value="">Unassigned</option>
-                    {users.map((user) => <option key={user.id} value={user.id}>{[user.first_name, user.last_name].filter(Boolean).join(" ") || user.role}</option>)}
-                  </select>
-                </label>
-                <label className="flex items-center gap-1.5 text-slate-600">
-                  <span className="font-medium text-slate-500">Status</span>
-                  <select aria-label="Conversation status" className="h-6 rounded border border-slate-200 bg-slate-50 px-1 text-xs text-slate-700" value={selectedConversation.status}
-                    onChange={(event) => void changeInboxConversationStatus(selectedConversation.id, event.target.value as ConversationStatus)
-                      .then(updateConversation).catch((error) => setSendError(error instanceof Error ? error.message : "Status could not be changed."))}>
-                    {INBOX_STATUSES.map((status) => <option key={status} value={status}>{status[0].toUpperCase() + status.slice(1)}</option>)}
-                  </select>
-                </label>
-
-                {/* Chatbot Mode / Human Mode Switch */}
-                <div className="flex items-center gap-1.5 border-l border-slate-200 pl-2.5">
-                  <span className="text-slate-500 font-medium">Mode:</span>
-                  <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-100 p-0.5 shadow-2xs">
-                    <button
-                      type="button"
-                      onClick={() => void handleModeChange("chatbot")}
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold transition cursor-pointer ${
-                        (selectedConversation.mode ?? "chatbot") === "chatbot"
-                          ? "bg-emerald-600 text-white shadow-xs"
-                          : "text-slate-600 hover:text-slate-900"
-                      }`}
-                      title="Chatbot Mode: Automated flows and AI auto-replies are active"
-                    >
-                      <span>🤖</span>
-                      <span>Chatbot</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleModeChange("human")}
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold transition cursor-pointer ${
-                        selectedConversation.mode === "human"
-                          ? "bg-blue-600 text-white shadow-xs"
-                          : "text-slate-600 hover:text-slate-900"
-                      }`}
-                      title="Human Mode: Bot automation paused for manual human replies"
-                    >
-                      <span>👤</span>
-                      <span>Human</span>
-                    </button>
-                  </div>
+              <div className="thread-toolbar">
+                <div className="thread-toolbar-fields">
+                  <label className="thread-field">
+                    <span>Assignee</span>
+                    <select aria-label="Assign conversation" value={selectedConversation.assigned_user?.id ?? ""}
+                      onChange={(event) => void assignInboxConversation(selectedConversation.id, event.target.value || null)
+                        .then(updateConversation).catch((error) => setSendError(error instanceof Error ? error.message : "Assignment could not be changed."))}>
+                      <option value="">Unassigned</option>
+                      {users.map((user) => <option key={user.id} value={user.id}>{[user.first_name, user.last_name].filter(Boolean).join(" ") || user.role}</option>)}
+                    </select>
+                  </label>
+                  <label className="thread-field">
+                    <span>Status</span>
+                    <select aria-label="Conversation status" value={selectedConversation.status}
+                      onChange={(event) => void changeInboxConversationStatus(selectedConversation.id, event.target.value as ConversationStatus)
+                        .then(updateConversation).catch((error) => setSendError(error instanceof Error ? error.message : "Status could not be changed."))}>
+                      {INBOX_STATUSES.map((status) => <option key={status} value={status}>{status[0].toUpperCase() + status.slice(1)}</option>)}
+                    </select>
+                  </label>
                 </div>
-
-                <div className="ml-auto flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowContactDetails((open) => !open)}
-                    className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 hover:text-indigo-600 transition cursor-pointer"
-                  >
-                    <span>ℹ️</span>
-                    <span>{showContactDetails ? "Hide Details" : "Contact Details"}</span>
-                  </button>
-                  <a className="text-sky-700 hover:underline text-xs" href="/contacts">Open Contacts</a>
+                <div className="reply-mode" role="group" aria-label="Reply mode">
+                  <button type="button" aria-pressed={(selectedConversation.mode ?? "chatbot") === "chatbot"} onClick={() => void handleModeChange("chatbot")} title="Chatbot replies automatically">Chatbot</button>
+                  <button type="button" aria-pressed={selectedConversation.mode === "human"} onClick={() => void handleModeChange("human")} title="Pause automation and reply manually">Human</button>
                 </div>
               </div>
-              <aside className="border-b border-slate-200 bg-slate-50 px-4 py-1.5 text-xs text-slate-600 xl:hidden" aria-label="Contact details">
-                <span className="font-semibold text-slate-800">Contact</span>
-                <span className="ml-3">{contactDetails?.name || selectedConversation.contact.name || "Unknown contact"}</span>
-                <span className="ml-3">{contactDetails?.phone_number || selectedConversation.contact.phone_number || "Phone unavailable"}</span>
-                {contactDetails?.email && <span className="ml-3">{contactDetails.email}</span>}
-              </aside>
-
-              {/* Automation Mode Status Banner */}
-              {!bannerDismissed && (
-                selectedConversation.mode === "human" ? (
-                  <div className="mx-3.5 my-1 flex items-center justify-between rounded-lg bg-blue-50/90 border border-blue-200 px-3 py-1 text-xs text-blue-900 shadow-2xs">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-xs">👤</span>
-                      <p className="truncate text-xs">
-                        <span className="font-bold">Human Mode: </span>
-                        <span className="text-blue-700">Bot paused. Answer manually below.</span>
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => void handleModeChange("chatbot")}
-                        className="inline-flex items-center gap-1 rounded bg-white px-2 py-0.5 text-xs font-bold text-blue-700 border border-blue-300 shadow-2xs hover:bg-blue-50 transition cursor-pointer"
-                      >
-                        <span>Switch to Chatbot 🤖</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setBannerDismissed(true)}
-                        className="text-blue-400 hover:text-blue-700 px-1 text-xs font-bold leading-none cursor-pointer"
-                        title="Dismiss banner"
-                        aria-label="Dismiss banner"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mx-3.5 my-1 flex items-center justify-between rounded-lg bg-emerald-50/90 border border-emerald-200 px-3 py-1 text-xs text-emerald-900 shadow-2xs">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-xs">🤖</span>
-                      <p className="truncate text-xs">
-                        <span className="font-bold">Chatbot Mode: </span>
-                        <span className="text-emerald-700">Flows and AI respond automatically.</span>
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => void handleModeChange("human")}
-                        className="inline-flex items-center gap-1 rounded bg-white px-2 py-0.5 text-xs font-bold text-emerald-700 border border-emerald-300 shadow-2xs hover:bg-emerald-50 transition cursor-pointer"
-                      >
-                        <span>Take Over (Human) 👤</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setBannerDismissed(true)}
-                        className="text-emerald-400 hover:text-emerald-700 px-1 text-xs font-bold leading-none cursor-pointer"
-                        title="Dismiss banner"
-                        aria-label="Dismiss banner"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                )
-              )}
-
-              <div className="thread-date-divider"><span>Conversation history</span></div>
+              {showContactDetails && <aside id="inbox-contact-details" className="thread-contact-summary" aria-label="Contact details">
+                <span>{contactDetails?.name || selectedConversation.contact.name || "Unknown contact"}</span>
+                <span>{contactDetails?.phone_number || selectedConversation.contact.phone_number}</span>
+                {contactDetails?.email && <span>{contactDetails.email}</span>}
+                <a href="/contacts">View contact</a>
+              </aside>}
 
               <div className="message-history min-h-0 flex-1 overflow-y-auto" ref={threadRef} aria-live="polite" aria-label="Messages">
                 {canLoadEarlier && !messagesLoading && (
@@ -899,16 +761,23 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
                   {uncertainSend && <>
                     <p className="mt-1 text-xs leading-5">The message may already have reached WhatsApp. Refresh and check the thread before deciding whether to retry.</p>
                     <button type="button" className="text-action mt-2" onClick={() => void refreshThread(selectedConversation.id)}>Refresh message status</button>
-                    <button type="button" className="retry-confirm" onClick={() => {
-                      if (window.confirm("Only continue if you checked WhatsApp and confirmed the previous reply was not sent. Retrying can create a duplicate.")) {
-                        setUncertainSend(false);
-                        setSendError("");
-                      }
-                    }}>I verified it was not sent — allow one retry</button>
+                    <details className="retry-confirmation">
+                      <summary>I checked the message status</summary>
+                      <p>Only retry if the previous reply was not sent. Retrying can create a duplicate.</p>
+                      <button type="button" className="retry-confirm" onClick={() => { setUncertainSend(false); setSendError(""); }}>Confirm it was not sent — allow one retry</button>
+                    </details>
                   </>}
                 </div>}
                 {templateOpen && (
-                  <form className="mb-2.5 max-h-[260px] overflow-y-auto rounded-xl border border-indigo-200 bg-slate-50/95 p-3 shadow-xs" onSubmit={sendTemplate}>
+                  <form className="mb-2.5 max-h-[260px] overflow-y-auto rounded-xl border border-indigo-200 bg-slate-50/95 p-3 shadow-xs" noValidate onSubmit={(event) => {
+                    if (!event.currentTarget.checkValidity()) {
+                      event.preventDefault();
+                      setSendError("Complete the required template fields.");
+                      event.currentTarget.querySelector<HTMLElement>(":invalid")?.focus();
+                      return;
+                    }
+                    void sendTemplate(event);
+                  }}>
                     <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 pb-2">
                       <div className="flex items-center gap-2">
                         <strong className="text-xs font-bold text-slate-800 uppercase tracking-wide">Approved WhatsApp Template</strong>
@@ -966,9 +835,10 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
                     </button>
                   </form>
                 )}
-                <form className="reply-composer" onSubmit={sendReply}>
+                <form className="reply-composer" onSubmit={sendReply} noValidate>
                   <label htmlFor="reply-message" className="sr-only">Write a WhatsApp reply</label>
                   <textarea
+                    className="resize-none"
                     id="reply-message"
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
@@ -985,14 +855,14 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
                     aria-describedby="reply-guidance"
                   />
                   <div className="composer-footer">
-                    <span id="reply-guidance" className="composer-guidance">Enter to send · Shift + Enter for a new line</span>
-                    <div className="flex items-center gap-3">
-                      <button type="button" className="text-action" disabled={Boolean(canReplyReason)} onClick={() => void openTemplatePicker()}>
-                        {templateOpen ? "✕ Close Templates" : "📄 Template Message"}
-                      </button>
-                      <span className="character-count">{Array.from(draft).length}/{MAX_TEXT_LENGTH}</span>
-                      <button type="submit" disabled={!draft.trim() || Boolean(canReplyReason) || sending || uncertainSend} className="send-button">
-                        {sending ? "Sending…" : <><span>Send</span><span aria-hidden="true">↑</span></>}
+                    <button type="button" className="composer-template" disabled={Boolean(canReplyReason)} onClick={() => void openTemplatePicker()} aria-expanded={templateOpen}>
+                      <InboxIcon name={templateOpen ? "close" : "template"} /><span>Templates</span>
+                    </button>
+                    <div className="composer-send-actions">
+                      <span id="reply-guidance" className="composer-guidance">Enter to send</span>
+                      {Array.from(draft).length > MAX_TEXT_LENGTH * 0.85 && <span className="character-count">{Array.from(draft).length}/{MAX_TEXT_LENGTH}</span>}
+                      <button type="submit" disabled={!draft.trim() || Boolean(canReplyReason) || sending || uncertainSend} className="send-button" title="Send message (Enter). Shift + Enter adds a new line.">
+                        {sending ? "Sending…" : <><span>Send</span><InboxIcon name="send" /></>}
                       </button>
                     </div>
                   </div>
@@ -1008,48 +878,23 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
           )}
         </section>
         {selectedConversation && showContactDetails && (
-          <aside className="hidden border-l border-slate-200 bg-slate-50 p-4 xl:flex xl:flex-col overflow-y-auto" aria-label="Contact and conversation information">
-            <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm">👤</span>
-                <h2 className="text-sm font-bold text-slate-900">Contact Details</h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowContactDetails(false)}
-                className="grid h-6 w-6 place-items-center rounded-md text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition cursor-pointer text-xs"
-                title="Close contact details"
-                aria-label="Close contact details"
-              >
-                ✕
-              </button>
+          <aside className="inbox-contact-panel" aria-label="Contact and conversation information">
+            <header>
+              <h2>Contact details</h2>
+              <button type="button" className="inbox-icon-button" onClick={() => { setShowContactDetails(false); detailsToggleRef.current?.focus(); }} title="Close contact details" aria-label="Close contact details"><InboxIcon name="close" /></button>
+            </header>
+            <div className="contact-panel-person">
+              <span className="contact-avatar" aria-hidden="true">{contactInitial(contactDetails?.name || selectedConversation.contact.name)}</span>
+              <h3>{contactDetails?.name || selectedConversation.contact.name || "Unknown contact"}</h3>
+              <p>{contactDetails?.phone_number || selectedConversation.contact.phone_number || "Phone unavailable"}</p>
+              {contactDetails?.email && <p>{contactDetails.email}</p>}
+              <a href="/contacts">View contact <span aria-hidden="true">↗</span></a>
             </div>
-            <p className="mt-3.5 text-sm font-semibold text-slate-800">{contactDetails?.name || selectedConversation.contact.name || "Unknown contact"}</p>
-            <p className="mt-1 break-all text-xs text-slate-600">{contactDetails?.phone_number || selectedConversation.contact.phone_number || "Phone unavailable"}</p>
-            {contactDetails?.email && <p className="mt-2 break-all text-xs text-slate-600">{contactDetails.email}</p>}
-            <a className="mt-3 text-xs text-sky-700 hover:underline inline-block" href="/contacts">Open Contacts</a>
-            <hr className="my-3.5 border-slate-200" />
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Conversation</h3>
-            <p className="mt-2.5 text-xs text-slate-700">Status: <span className="capitalize">{selectedConversation.status}</span></p>
-            <p className="mt-1.5 text-xs text-slate-700">Channel: {selectedConversation.channel.name}</p>
-            <p className="mt-1.5 text-xs text-slate-700">Assigned to: {selectedConversation.assigned_user ? [selectedConversation.assigned_user.first_name, selectedConversation.assigned_user.last_name].filter(Boolean).join(" ") : "Unassigned"}</p>
-            <div className="mt-3 pt-3 border-t border-slate-200/80">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700">Automation Mode:</span>
-                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                  selectedConversation.mode === "human"
-                    ? "bg-blue-100 text-blue-800 border border-blue-200"
-                    : "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                }`}>
-                  {selectedConversation.mode === "human" ? "👤 Human Mode" : "🤖 Chatbot Mode"}
-                </span>
-              </div>
-              <p className="mt-1.5 text-[11px] text-slate-500 leading-relaxed">
-                {selectedConversation.mode === "human"
-                  ? "Bot flow & AI auto-replies are paused. All replies sent manually by human agent."
-                  : "Default mode. Bot flow and AI automatically reply to incoming customer messages."}
-              </p>
-            </div>
+            <dl className="contact-panel-facts">
+              <div><dt>Channel</dt><dd>{selectedConversation.channel.name}</dd></div>
+              <div><dt>Status</dt><dd className="capitalize">{selectedConversation.status}</dd></div>
+              <div><dt>Assignee</dt><dd>{selectedConversation.assigned_user ? [selectedConversation.assigned_user.first_name, selectedConversation.assigned_user.last_name].filter(Boolean).join(" ") : "Unassigned"}</dd></div>
+            </dl>
           </aside>
         )}
       </div>

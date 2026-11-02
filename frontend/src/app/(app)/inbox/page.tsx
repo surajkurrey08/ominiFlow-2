@@ -1,5 +1,7 @@
 import { InboxClient } from "@/components/inbox/inbox-client";
 
+export const metadata = { title: "Inbox · Omniflow" };
+
 interface InboxPageProps {
   searchParams: Promise<{ conversation?: string }>;
 }
