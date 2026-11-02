@@ -198,12 +198,25 @@ export function PostingsClient() {
             <h1 className="text-[28px] font-bold text-slate-800 leading-tight mb-1">Postings</h1>
             <p className="text-[15px] text-slate-500">Plan, publish and measure your social media content.</p>
           </div>
-          <button 
-            onClick={() => setActiveTab("Create post")}
-            className="bg-[#00b050] hover:bg-[#009040] text-white px-5 py-2.5 rounded-md font-bold text-sm shadow-sm transition-colors"
-          >
-            + Create post
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void loadData()}
+              disabled={loading}
+              title="Refresh postings"
+              aria-label="Refresh postings"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold transition-colors disabled:opacity-50 cursor-pointer shadow-sm"
+            >
+              <RefreshCwIcon className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+              <span>{loading ? "Refreshing…" : "Refresh"}</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab("Create post")}
+              className="bg-[#00b050] hover:bg-[#009040] text-white px-5 py-2.5 rounded-md font-bold text-sm shadow-sm transition-colors"
+            >
+              + Create post
+            </button>
+          </div>
         </div>
 
         {/* Global Alert Notification */}

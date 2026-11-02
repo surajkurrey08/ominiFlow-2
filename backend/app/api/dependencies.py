@@ -116,14 +116,17 @@ def get_current_user(
         now = datetime.now(timezone.utc)
         timeout_hours = getattr(settings, "session_inactivity_timeout_hours", 24)
         if user_session.last_active_at:
+            last_active = user_session.last_active_at
+            if last_active.tzinfo is None:
+                last_active = last_active.replace(tzinfo=timezone.utc)
             # Expire session only if no activity for 24 hours
-            if (now - user_session.last_active_at) > timedelta(hours=timeout_hours):
+            if (now - last_active) > timedelta(hours=timeout_hours):
                 user_session.is_active = False
                 db.commit()
                 raise _credentials_exception()
 
             # Active request: slide the session by updating last_active_at (throttled to 60s)
-            if (now - user_session.last_active_at).total_seconds() >= 60:
+            if (now - last_active).total_seconds() >= 60:
                 user_session.last_active_at = now
                 db.commit()
         else:

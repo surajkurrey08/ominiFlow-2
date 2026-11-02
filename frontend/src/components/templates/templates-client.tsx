@@ -286,8 +286,23 @@ export function TemplatesClient() {
           </div>
 
           <div className="flex items-center gap-3">
-            <button onClick={() => { setSyncChannel(connectedWhatsApp[0]?.id ?? ""); setSyncOpen(true); }} className="p-2.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+            <button 
+              type="button"
+              onClick={() => void load()} 
+              disabled={loading}
+              title="Refresh templates"
+              aria-label="Refresh templates"
+              className="p-2.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm cursor-pointer disabled:opacity-50"
+            >
+              <svg className={`w-5 h-5 ${loading ? "animate-spin text-[#00b050]" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+            </button>
+            <button 
+              type="button"
+              onClick={() => { setSyncChannel(connectedWhatsApp[0]?.id ?? ""); setSyncOpen(true); }} 
+              title="Sync from WhatsApp Meta"
+              className="flex items-center gap-1.5 px-3 py-2.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700 font-semibold text-sm shadow-sm cursor-pointer"
+            >
+              <span>Sync from Meta</span>
             </button>
             <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-lg font-bold text-sm text-slate-700 hover:bg-slate-50 shadow-sm">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg> Filter

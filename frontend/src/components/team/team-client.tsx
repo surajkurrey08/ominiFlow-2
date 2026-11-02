@@ -208,11 +208,27 @@ export function TeamClient({ currentUser }: { currentUser: CurrentUser }) {
           <h1 className="page-title mt-2">Team</h1>
           <p className="page-subtitle mt-2">The people and roles in your workspace.</p>
         </div>
-        {canManage && (
-          <button type="button" className="channel-primary-btn" onClick={() => { setInviteError(""); setInviteForm({ email: "", role_id: "" }); setInviteOpen(true); }}>
-            <span aria-hidden="true">+</span> Invite member
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="channel-secondary-btn inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            disabled={loading}
+            onClick={() => {
+              void loadMembers(page, search);
+              void loadAux();
+            }}
+            title="Refresh team members"
+            aria-label="Refresh team members"
+          >
+            <span aria-hidden="true" className={loading ? "animate-spin" : ""}>↻</span>
+            <span>{loading ? "Refreshing…" : "Refresh"}</span>
           </button>
-        )}
+          {canManage && (
+            <button type="button" className="channel-primary-btn" onClick={() => { setInviteError(""); setInviteForm({ email: "", role_id: "" }); setInviteOpen(true); }}>
+              <span aria-hidden="true">+</span> Invite member
+            </button>
+          )}
+        </div>
       </header>
 
       {notice && (

@@ -1,7 +1,8 @@
+import hashlib
 import secrets
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 import redis
 from sqlalchemy import func, or_, text
@@ -16,6 +17,7 @@ from app.models import (
     Contact,
     Conversation,
     Message,
+    PasswordResetRequest,
     Role,
     TeamInvitation,
     Tenant,
@@ -54,7 +56,7 @@ def get_dashboard_stats(db: Session) -> dict[str, Any]:
     total_users = db.query(User).count()
     connected_channels = (
         db.query(ChannelConnection)
-        .filter(ChannelConnection.status == "connected", ChannelConnection.is_deleted.is_(False))
+        .filter(ChannelConnection.status == "connected", ChannelConnection.is_active.is_(True))
         .count()
     )
     total_conversations = db.query(Conversation).count()
@@ -118,7 +120,7 @@ def get_admin_tenants(
     items = []
     for t in tenants:
         user_count = db.query(TenantMembership).filter(TenantMembership.tenant_id == t.id, TenantMembership.status == "active").count()
-        channel_count = db.query(ChannelConnection).filter(ChannelConnection.tenant_id == t.id, ChannelConnection.is_deleted.is_(False)).count()
+        channel_count = db.query(ChannelConnection).filter(ChannelConnection.tenant_id == t.id, ChannelConnection.is_active.is_(True)).count()
         conversation_count = db.query(Conversation).filter(Conversation.tenant_id == t.id).count()
 
         items.append({
@@ -294,7 +296,7 @@ def get_admin_tenant_detail(db: Session, tenant_id: uuid.UUID) -> dict[str, Any]
                 "status": m.status,
             })
 
-    channels = db.query(ChannelConnection).filter(ChannelConnection.tenant_id == t.id, ChannelConnection.is_deleted.is_(False)).all()
+    channels = db.query(ChannelConnection).filter(ChannelConnection.tenant_id == t.id, ChannelConnection.is_active.is_(True)).all()
     channels_data = [
         {
             "id": str(c.id),
@@ -506,7 +508,7 @@ def get_admin_channels(
     channel_type: str | None = None,
     status_filter: str | None = None,
 ) -> dict[str, Any]:
-    query = db.query(ChannelConnection).filter(ChannelConnection.is_deleted.is_(False))
+    query = db.query(ChannelConnection).filter(ChannelConnection.is_active.is_(True))
 
     if search:
         term = f"%{search.strip()}%"
@@ -770,3 +772,92 @@ def get_admin_audit_logs(db: Session) -> dict[str, Any]:
         "items": items[:25],
         "total": len(items),
     }
+
+
+def get_admin_password_resets(db: Session) -> list[dict[str, Any]]:
+    requests = (
+        db.query(PasswordResetRequest)
+        .order_by(PasswordResetRequest.requested_at.desc())
+        .limit(100)
+        .all()
+    )
+    result = []
+    for r in requests:
+        user = db.get(User, r.user_id)
+        tenant_names = []
+        if user:
+            memberships = db.query(TenantMembership).filter(TenantMembership.user_id == user.id).all()
+            for m in memberships:
+                t = db.get(Tenant, m.tenant_id)
+                if t and t.name not in tenant_names:
+                    tenant_names.append(t.name)
+        result.append({
+            "id": str(r.id),
+            "user_id": str(r.user_id),
+            "email": r.email,
+            "status": r.status,
+            "requested_at": r.requested_at.isoformat() if r.requested_at else None,
+            "reviewed_at": r.reviewed_at.isoformat() if r.reviewed_at else None,
+            "user_name": f"{user.first_name} {user.last_name or ''}".strip() if user else "Unknown User",
+            "tenants": tenant_names,
+        })
+    return result
+
+
+def approve_admin_password_reset(db: Session, request_id: uuid.UUID, admin: User) -> dict[str, Any]:
+    reset_request = db.query(PasswordResetRequest).filter(
+        PasswordResetRequest.id == request_id,
+        PasswordResetRequest.status == "pending",
+    ).first()
+    if not reset_request:
+        raise ValueError("Pending password reset request not found.")
+
+    user = db.get(User, reset_request.user_id)
+    if not user or not user.is_active:
+        raise ValueError("User account is inactive or not found.")
+
+    raw_token = secrets.token_urlsafe(48)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    expire_minutes = getattr(settings, "password_reset_expire_minutes", 1440)
+    reset_request.status = "approved"
+    reset_request.reviewed_by = admin.id
+    reset_request.reviewed_at = datetime.now(timezone.utc)
+    reset_request.reset_token_hash = token_hash
+    reset_request.token_expires_at = datetime.now(timezone.utc) + timedelta(minutes=expire_minutes)
+
+    frontend_url = getattr(settings, "frontend_url", "https://fmfilms.in")
+    reset_url = f"{frontend_url}/reset-password?token={raw_token}"
+
+    email_sent = False
+    if getattr(settings, "smtp_host", None):
+        try:
+            import smtplib
+            from email.message import EmailMessage
+            message = EmailMessage()
+            message["Subject"] = "Reset your Omniflow password"
+            smtp_from = getattr(settings, "smtp_from_email", "support@fmfilms.in")
+            smtp_name = getattr(settings, "smtp_from_name", "Omniflow")
+            message["From"] = f"{smtp_name} <{smtp_from}>"
+            message["To"] = reset_request.email
+            message.set_content(
+                f"Hello,\n\nA platform administrator has approved your password reset request.\n\n"
+                f"You can choose a new password by clicking the link below:\n{reset_url}\n\n"
+                f"This link will expire in {expire_minutes} minutes.\n"
+            )
+            with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as s:
+                s.starttls()
+                if getattr(settings, "smtp_username", None) and getattr(settings, "smtp_password", None):
+                    s.login(settings.smtp_username, settings.smtp_password)
+                s.send_message(message)
+            email_sent = True
+        except Exception:
+            pass
+
+    db.commit()
+    return {
+        "status": "approved",
+        "email": reset_request.email,
+        "reset_url": reset_url,
+        "email_sent": email_sent,
+    }
+

@@ -42,6 +42,8 @@ from app.services.admin_service import (
     delete_admin_tenant,
     delete_admin_user,
     get_admin_api_usage,
+    get_admin_password_resets,
+    approve_admin_password_reset,
     get_admin_audit_logs,
     get_admin_channels,
     get_admin_conversations,
@@ -103,7 +105,11 @@ def admin_me(admin: CurrentPlatformAdmin):
 
 @router.get("/dashboard", response_model=AdminDashboardStats)
 def admin_dashboard(admin: CurrentPlatformAdmin, db: DbSession):
-    return get_dashboard_stats(db)
+    try:
+        return get_dashboard_stats(db)
+    except Exception as e:
+        logger.exception("Failed to get dashboard stats: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # =========================
@@ -413,3 +419,27 @@ def get_settings(admin: CurrentPlatformAdmin):
 @router.get("/maintenance", response_model=AdminMaintenanceResponse)
 def get_maintenance(admin: CurrentPlatformAdmin):
     return get_admin_maintenance()
+
+
+# =========================
+# PASSWORD RESETS
+# =========================
+
+@router.get("/password-resets")
+def list_password_resets(admin: CurrentPlatformAdmin, db: DbSession):
+    return get_admin_password_resets(db)
+
+
+@router.post("/password-resets/{request_id}/approve")
+def approve_password_reset(
+    request_id: uuid.UUID,
+    admin: CurrentPlatformAdmin,
+    db: DbSession,
+):
+    try:
+        return approve_admin_password_reset(db, request_id, admin)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Failed to approve password reset request: %s", e)
+        raise HTTPException(status_code=500, detail=f"Failed to approve request: {str(e)}")

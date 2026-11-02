@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { backendApiUrl, isRecord, parseJson } from "@/lib/auth/backend";
+import { validatePassword } from "@/lib/auth/validation";
 
 export const runtime = "nodejs";
 
@@ -14,8 +15,9 @@ export async function POST(request: NextRequest) {
   ) {
     return NextResponse.json({ error: "Enter your new password and confirm it." }, { status: 400 });
   }
-  if (body.password.length < 8 || body.password.length > 128) {
-    return NextResponse.json({ error: "Password must be between 8 and 128 characters." }, { status: 400 });
+  const passwordError = validatePassword(body.password);
+  if (passwordError) {
+    return NextResponse.json({ error: passwordError }, { status: 400 });
   }
   if (body.password !== body.confirm_password) {
     return NextResponse.json({ error: "Passwords do not match." }, { status: 400 });

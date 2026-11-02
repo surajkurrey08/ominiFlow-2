@@ -35,6 +35,7 @@ from app.models.payment import PaymentTransaction, TenantAiCredit
 from app.models.credit_usage import CreditUsage
 from app.models.whatsapp_usage import WhatsAppUsageRecord
 from app.models.billing_invoice import BillingInvoice
+from app.models.password_reset_request import PasswordResetRequest
 
 
 
@@ -66,6 +67,7 @@ __all__ = [
     "MessageMedia",
     "USABLE_TEMPLATE_STATUSES",
     "MessageTemplate",
+    "PasswordResetRequest",
     "Automation", "AutomationEdge", "AutomationNode", "AutomationExecution", "AutomationExecutionLog",
     "AutomationStatus", "AutomationTrigger", "AutomationNodeType", "AutomationExecutionStatus",
     "AutomationWorkerHeartbeat",

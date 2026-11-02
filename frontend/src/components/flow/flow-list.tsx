@@ -22,6 +22,7 @@ export function FlowList() {
   const [pageSize, setPageSize] = useState(10);
 
   async function refresh() {
+    setLoading(true);
     try {
       const result = await flowsApi.list();
       setItems(result.items);
@@ -64,9 +65,21 @@ export function FlowList() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Flow</h1>
           <p className="mt-1 text-sm text-slate-500">Chat flow automation</p>
         </div>
-        <button onClick={() => setModalOpen(true)} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700">
-          <span className="text-base leading-none">+</span> Create Flow
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={loading}
+            title="Refresh flows"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+          >
+            <span aria-hidden="true" className={loading ? "animate-spin" : ""}>↻</span>
+            <span>{loading ? "Refreshing…" : "Refresh"}</span>
+          </button>
+          <button onClick={() => setModalOpen(true)} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700">
+            <span className="text-base leading-none">+</span> Create Flow
+          </button>
+        </div>
       </header>
 
       {error && <p role="alert" className="mt-5 rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</p>}

@@ -64,9 +64,25 @@ export function AutomationsClient() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Automations</h1>
           <p className="mt-1 text-sm text-slate-500">When something happens, run actions</p>
         </div>
-        <Link href="/automations/new" className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700">
-          <span className="text-base leading-none">+</span> New automation
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setLoading(true);
+              void refresh();
+            }}
+            disabled={loading}
+            title="Refresh automations"
+            aria-label="Refresh automations"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer shadow-sm"
+          >
+            <span aria-hidden="true" className={loading ? "animate-spin" : ""}>↻</span>
+            <span>{loading ? "Refreshing…" : "Refresh"}</span>
+          </button>
+          <Link href="/automations/new" className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700">
+            <span className="text-base leading-none">+</span> New automation
+          </Link>
+        </div>
       </header>
 
       {error && <p role="alert" className="mt-5 rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</p>}

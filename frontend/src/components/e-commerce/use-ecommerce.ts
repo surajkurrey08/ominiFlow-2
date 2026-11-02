@@ -78,6 +78,20 @@ export function useEcommerce() {
     }
   };
 
+  const refresh = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      if (activeMenu === "Overview") await loadOverview();
+      else if (activeMenu === "Products") await loadProducts();
+      else if (activeMenu === "Orders") await loadOrders();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     activeMenu,
     setActiveMenu,
@@ -87,5 +101,6 @@ export function useEcommerce() {
     isLoading,
     error,
     handleUpdateOrderStatus,
+    refresh,
   };
 }

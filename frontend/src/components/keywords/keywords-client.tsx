@@ -284,6 +284,20 @@ export function KeywordsClient() {
         <div className="flex items-center gap-3">
           <button
             type="button"
+            className="inline-flex items-center gap-1.5 px-3 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-sm font-semibold shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+            disabled={loading}
+            title="Refresh keyword rules"
+            aria-label="Refresh keyword rules"
+            onClick={() => {
+              void load();
+              void loadFlows();
+            }}
+          >
+            <span aria-hidden="true" className={loading ? "animate-spin" : ""}>↻</span>
+            <span>{loading ? "Refreshing…" : "Refresh"}</span>
+          </button>
+          <button
+            type="button"
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#00b050] hover:bg-[#009944] text-white rounded-xl text-sm font-bold shadow-sm transition-all"
             onClick={openCreateForm}
           >

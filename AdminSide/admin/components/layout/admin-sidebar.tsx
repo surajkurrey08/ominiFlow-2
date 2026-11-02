@@ -8,6 +8,7 @@ import {
   Activity,
   Building2,
   Users,
+  KeyRound,
   Layers,
   MessageSquare,
   BarChart3,
@@ -42,6 +43,7 @@ const navSections: Array<{ title: string; items: NavItem[] }> = [
     items: [
       { name: "Tenants", href: "/admin/tenants", icon: Building2 },
       { name: "Users", href: "/admin/users", icon: Users },
+      { name: "Password Resets", href: "/admin/password-resets", icon: KeyRound },
       { name: "Channels", href: "/admin/channels", icon: Layers },
       { name: "Conversations", href: "/admin/conversations", icon: MessageSquare },
     ],

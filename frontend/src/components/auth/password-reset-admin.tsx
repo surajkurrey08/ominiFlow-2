@@ -84,8 +84,9 @@ export function PasswordResetAdmin() {
           <h2 className="text-lg font-semibold text-slate-900">Pending requests</h2>
           <p className="mt-1 text-sm text-slate-600">Approving sends a single-use reset link to that account&apos;s email.</p>
         </div>
-        <button type="button" onClick={() => void load()} disabled={loading} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium disabled:opacity-50">
-          Refresh
+        <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer">
+          <span aria-hidden="true" className={`inline-block ${loading ? "animate-spin" : ""}`}>↻</span>
+          <span>{loading ? "Refreshing…" : "Refresh"}</span>
         </button>
       </div>
       {error && <p role="alert" className="mt-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}

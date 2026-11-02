@@ -6,6 +6,7 @@ export interface BuilderHandlers {
   onEdit: (id: string) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
+  onDeleteEdge?: (id: string) => void;
   selectedId: string | null;
 }
 
@@ -13,6 +14,7 @@ export const BuilderContext = createContext<BuilderHandlers>({
   onEdit: () => {},
   onDuplicate: () => {},
   onDelete: () => {},
+  onDeleteEdge: () => {},
   selectedId: null,
 });
 

@@ -42,6 +42,8 @@ from app.services.admin_service import (
     delete_admin_tenant,
     delete_admin_user,
     get_admin_api_usage,
+    get_admin_password_resets,
+    approve_admin_password_reset,
     get_admin_audit_logs,
     get_admin_channels,
     get_admin_conversations,
@@ -413,3 +415,24 @@ def get_settings(admin: CurrentPlatformAdmin):
 @router.get("/maintenance", response_model=AdminMaintenanceResponse)
 def get_maintenance(admin: CurrentPlatformAdmin):
     return get_admin_maintenance()
+
+
+# =========================
+# PASSWORD RESETS
+# =========================
+
+@router.get("/password-resets")
+def list_password_resets(admin: CurrentPlatformAdmin, db: DbSession):
+    return get_admin_password_resets(db)
+
+
+@router.post("/password-resets/{request_id}/approve")
+def approve_password_reset(
+    request_id: uuid.UUID,
+    admin: CurrentPlatformAdmin,
+    db: DbSession,
+):
+    try:
+        return approve_admin_password_reset(db, request_id, admin)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

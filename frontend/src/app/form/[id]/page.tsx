@@ -5,12 +5,14 @@ import { useParams, useSearchParams } from "next/navigation";
 
 interface FormField {
   id: string;
-  type: "heading" | "text" | "textarea" | "dropdown" | "radio" | "checkbox" | "date";
+  type: "heading" | "text" | "textarea" | "dropdown" | "radio" | "checkbox" | "date" | "file";
   label: string;
   placeholder?: string;
   required?: boolean;
   options?: string[];
   description?: string;
+  fileType?: "all" | "image" | "video" | "document";
+  allowUrl?: boolean;
 }
 
 interface FormScreen {
@@ -93,6 +95,13 @@ export default function PublicFormPage() {
         if (val === undefined || val === null || val === "" || (Array.isArray(val) && val.length === 0)) {
           setValidationError(`Please fill out: "${field.label}"`);
           return false;
+        }
+        if (field.type === "file") {
+          const fileVal = typeof val === "object" ? val?.url : val;
+          if (!fileVal || !String(fileVal).trim()) {
+            setValidationError(`Please upload a file or enter a link for: "${field.label}"`);
+            return false;
+          }
         }
       }
     }
@@ -348,6 +357,15 @@ export default function PublicFormPage() {
                         className="w-full text-sm px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-[#00b050] focus:bg-white transition-all"
                       />
                     )}
+
+                    {field.type === "file" && (
+                      <FileUploadField
+                        field={field}
+                        formId={formId}
+                        value={answers[field.id]}
+                        onChange={(val) => handleInputChange(field.id, val)}
+                      />
+                    )}
                   </>
                 )}
               </div>
@@ -390,6 +408,243 @@ export default function PublicFormPage() {
       <div className="mt-6 text-center text-xs text-slate-400">
         Powered by Omniflow WhatsApp Forms
       </div>
+    </div>
+  );
+}
+
+function FileUploadField({
+  field,
+  formId,
+  value,
+  onChange,
+}: {
+  field: FormField;
+  formId: string;
+  value: any;
+  onChange: (val: any) => void;
+}) {
+  const [mode, setMode] = useState<"file" | "url">("file");
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [previewUrl, setPreviewUrl] = useState<string>(value?.url || "");
+  const [fileMeta, setFileMeta] = useState<{ name: string; size?: number; type?: string } | null>(
+    value ? { name: value.filename || value.name || value.url, size: value.size, type: value.content_type || value.type } : null
+  );
+
+  const accept =
+    field.fileType === "image"
+      ? "image/*"
+      : field.fileType === "video"
+      ? "video/*"
+      : field.fileType === "document"
+      ? ".pdf,.doc,.docx,.txt"
+      : "image/*,video/*,.pdf,.doc,.docx,.txt";
+
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 25 * 1024 * 1024) {
+      setUploadError("File is too large. Maximum size is 25 MB.");
+      return;
+    }
+
+    setUploadError("");
+    setUploading(true);
+
+    if (file.type.startsWith("image/")) {
+      const localUrl = URL.createObjectURL(file);
+      setPreviewUrl(localUrl);
+    }
+    setFileMeta({ name: file.name, size: file.size, type: file.type });
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch(`/api/whatsapp-forms/public/${formId}/upload`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setPreviewUrl(data.url);
+        onChange({
+          url: data.url,
+          filename: data.filename || file.name,
+          size: data.size || file.size,
+          content_type: data.content_type || file.type,
+        });
+      } else {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          onChange({
+            url: dataUrl,
+            filename: file.name,
+            size: file.size,
+            content_type: file.type,
+          });
+        };
+        reader.readAsDataURL(file);
+      }
+    } catch {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        onChange({
+          url: dataUrl,
+          filename: file.name,
+          size: file.size,
+          content_type: file.type,
+        });
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function handleUrlChange(url: string) {
+    setPreviewUrl(url);
+    if (!url.trim()) {
+      onChange(null);
+      setFileMeta(null);
+    } else {
+      onChange({ url: url.trim(), filename: "Media URL", type: "url" });
+      setFileMeta({ name: url.trim(), type: "url" });
+    }
+  }
+
+  function handleRemove() {
+    onChange(null);
+    setPreviewUrl("");
+    setFileMeta(null);
+    setUploadError("");
+  }
+
+  const formatSize = (bytes?: number) => {
+    if (!bytes) return "";
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  return (
+    <div className="space-y-2">
+      {field.description && (
+        <p className="text-xs text-slate-500">{field.description}</p>
+      )}
+
+      {field.allowUrl !== false && (
+        <div className="flex items-center gap-1 p-0.5 bg-slate-100 rounded-lg w-fit text-xs font-semibold text-slate-600">
+          <button
+            type="button"
+            onClick={() => setMode("file")}
+            className={`px-3 py-1 rounded-md transition-all ${
+              mode === "file" ? "bg-white text-emerald-800 shadow-xs font-bold" : "hover:text-slate-900"
+            }`}
+          >
+            📁 Upload File
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("url")}
+            className={`px-3 py-1 rounded-md transition-all ${
+              mode === "url" ? "bg-white text-emerald-800 shadow-xs font-bold" : "hover:text-slate-900"
+            }`}
+          >
+            🔗 Paste URL
+          </button>
+        </div>
+      )}
+
+      {mode === "file" ? (
+        <div>
+          {value?.url || fileMeta ? (
+            <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                {fileMeta?.type?.startsWith("image/") && previewUrl ? (
+                  <img
+                    src={previewUrl}
+                    alt="Upload preview"
+                    className="w-12 h-12 object-cover rounded-lg border border-emerald-300 shadow-2xs"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center text-xl shrink-0">
+                    {fileMeta?.type?.startsWith("video/") ? "🎥" : "📄"}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-slate-800 truncate max-w-[200px] sm:max-w-xs">
+                    {fileMeta?.name || "Uploaded File"}
+                  </p>
+                  <p className="text-[11px] text-emerald-700 font-medium">
+                    {uploading ? "Uploading file..." : `Ready ✓ ${formatSize(fileMeta?.size)}`}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleRemove}
+                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg transition-colors text-sm"
+                title="Remove file"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <label className="border-2 border-dashed border-emerald-300 hover:border-[#00b050] bg-emerald-50/40 hover:bg-emerald-50/70 rounded-2xl p-5 flex flex-col items-center justify-center cursor-pointer transition-all text-center group">
+              <input
+                type="file"
+                accept={accept}
+                onChange={handleFileSelect}
+                className="hidden"
+                disabled={uploading}
+              />
+              <div className="w-10 h-10 rounded-full bg-emerald-100 text-[#00b050] group-hover:bg-[#00b050] group-hover:text-white flex items-center justify-center text-lg mb-2 transition-colors">
+                ⬆
+              </div>
+              <p className="text-xs font-bold text-slate-800 group-hover:text-emerald-900">
+                Tap to choose Photo, Video or File
+              </p>
+              <p className="text-[11px] text-slate-500 mt-1">
+                {field.fileType === "image"
+                  ? "PNG, JPG, WebP (Max 25MB)"
+                  : field.fileType === "video"
+                  ? "MP4, MOV (Max 25MB)"
+                  : field.fileType === "document"
+                  ? "PDF, DOCX, TXT (Max 25MB)"
+                  : "Images, Videos, PDFs or Docs up to 25MB"}
+              </p>
+              {uploading && (
+                <div className="mt-3 text-xs font-semibold text-[#00b050] flex items-center gap-1.5">
+                  <div className="w-3.5 h-3.5 border-2 border-[#00b050] border-t-transparent rounded-full animate-spin" />
+                  Uploading...
+                </div>
+              )}
+            </label>
+          )}
+          {uploadError && (
+            <p className="text-xs text-rose-600 font-medium mt-1">{uploadError}</p>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          <input
+            type="url"
+            placeholder={field.placeholder || "Paste Google Drive, Image, or Video link..."}
+            value={value?.url || ""}
+            onChange={(e) => handleUrlChange(e.target.value)}
+            className="w-full text-sm px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-[#00b050] focus:bg-white transition-all font-mono text-xs"
+          />
+          {value?.url && (
+            <p className="text-[11px] text-emerald-700 font-medium flex items-center gap-1">
+              ✓ Link saved
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

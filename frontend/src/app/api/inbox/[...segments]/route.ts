@@ -142,7 +142,8 @@ async function handle(request: NextRequest, context: RouteContext, method: "GET"
             role: typeof item.role === "string" ? item.role : "",
           }]
         : []) : payload.items.flatMap((item) => isRecord(item) && typeof item.id === "string" &&
-          typeof item.name === "string" && typeof item.language === "string" && item.is_usable === true &&
+          typeof item.name === "string" && typeof item.language === "string" &&
+          (item.is_usable === true || String(item.status).toLowerCase() === "approved") &&
           Array.isArray(item.components)
           ? [{ id: item.id, name: item.name, language: item.language, components: item.components }]
           : []);
