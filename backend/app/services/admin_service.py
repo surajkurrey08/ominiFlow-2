@@ -1,3 +1,4 @@
+import logging
 import hashlib
 import secrets
 import time
@@ -17,6 +18,7 @@ from app.models import (
     Contact,
     Conversation,
     Message,
+    PasswordResetRequest,
     Role,
     TeamInvitation,
     Tenant,
@@ -26,6 +28,8 @@ from app.models import (
     WhatsAppEvent,
 )
 from app.services.auth_service import generate_slug
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -60,7 +64,7 @@ def get_dashboard_stats(db: Session) -> dict[str, Any]:
     )
     total_conversations = db.query(Conversation).count()
     total_messages = db.query(Message).count()
-    active_automations = db.query(Automation).filter(Automation.status == "active").count()
+    active_automations = db.query(Automation).filter(Automation.is_active.is_(True)).count()
 
     # DB Health
     db_status = "healthy"
@@ -834,7 +838,7 @@ def approve_admin_password_reset(db: Session, request_id: uuid.UUID, admin: User
             from email.message import EmailMessage
             message = EmailMessage()
             message["Subject"] = "Reset your Omniflow password"
-            smtp_from = getattr(settings, "smtp_from_email", "support@fmfilms.in")
+            smtp_from = getattr(settings, "smtp_from_email", None) or getattr(settings, "smtp_username", None) or "noreply@omniflow.local"
             smtp_name = getattr(settings, "smtp_from_name", "Omniflow")
             message["From"] = f"{smtp_name} <{smtp_from}>"
             message["To"] = reset_request.email
@@ -849,8 +853,9 @@ def approve_admin_password_reset(db: Session, request_id: uuid.UUID, admin: User
                     s.login(settings.smtp_username, settings.smtp_password)
                 s.send_message(message)
             email_sent = True
-        except Exception:
-            pass
+            logger.info("Password reset email sent to %s via SMTP", reset_request.email)
+        except Exception as exc:
+            logger.exception("Failed to deliver password reset email via SMTP: %s", exc)
 
     db.commit()
     return {

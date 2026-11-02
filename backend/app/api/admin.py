@@ -105,7 +105,11 @@ def admin_me(admin: CurrentPlatformAdmin):
 
 @router.get("/dashboard", response_model=AdminDashboardStats)
 def admin_dashboard(admin: CurrentPlatformAdmin, db: DbSession):
-    return get_dashboard_stats(db)
+    try:
+        return get_dashboard_stats(db)
+    except Exception as e:
+        logger.exception("Failed to get dashboard stats: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # =========================
@@ -436,3 +440,6 @@ def approve_password_reset(
         return approve_admin_password_reset(db, request_id, admin)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Failed to approve password reset request: %s", e)
+        raise HTTPException(status_code=500, detail=f"Failed to approve request: {str(e)}")

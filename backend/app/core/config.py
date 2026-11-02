@@ -33,10 +33,33 @@ class Settings(BaseSettings):
     # Email (SMTP)
     smtp_host: str = ""
     smtp_port: int = 587
-    smtp_username: str = ""
-    smtp_password: str = ""
-    smtp_from_email: str = "noreply@omniflow.local"
+    smtp_username: str = Field(
+        default="",
+        validation_alias=AliasChoices("smtp_username", "smtp_user"),
+    )
+    smtp_password: str = Field(
+        default="",
+        validation_alias=AliasChoices("smtp_password", "smtp_pass"),
+    )
+    smtp_from_email: str = Field(
+        default="noreply@omniflow.local",
+        validation_alias=AliasChoices("smtp_from_email", "smtp_from", "mail_from"),
+    )
     smtp_from_name: str = "Omniflow"
+
+    @field_validator("smtp_password", mode="before")
+    @classmethod
+    def _clean_smtp_password(cls, v: str) -> str:
+        if isinstance(v, str):
+            return v.replace(" ", "").strip()
+        return v
+
+    @field_validator("smtp_username", mode="before")
+    @classmethod
+    def _clean_smtp_username(cls, v: str) -> str:
+        if isinstance(v, str):
+            return v.strip()
+        return v
 
     # Comma-separated Fernet keys used to encrypt channel credentials.
     # The first key encrypts; all keys decrypt (allows key rotation).
@@ -153,6 +176,12 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env.strip().lower() in ("production", "prod")
+
+    @model_validator(mode="after")
+    def _normalize_smtp_from(self) -> "Settings":
+        if (not self.smtp_from_email or self.smtp_from_email == "noreply@omniflow.local") and "@" in self.smtp_username:
+            self.smtp_from_email = self.smtp_username
+        return self
 
     @model_validator(mode="after")
     def _validate_production_secrets(self) -> "Settings":

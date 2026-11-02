@@ -102,6 +102,7 @@ export function AuthForm({ mode, destination = "/dashboard" }: AuthFormProps) {
         required
         minLength={isRegister ? 8 : 1}
         maxLength={128}
+        helperText={isRegister ? "Must be at least 8 characters with an uppercase letter and a special character." : undefined}
       />
       {isRegister && (
         <Field label="Confirm password" name="confirm_password" type="password" autoComplete="new-password" required minLength={8} maxLength={128} />
@@ -146,9 +147,10 @@ interface FieldProps {
   required?: boolean;
   minLength?: number;
   maxLength?: number;
+  helperText?: string;
 }
 
-function Field({ label, name, type = "text", ...props }: FieldProps) {
+function Field({ label, name, type = "text", helperText, ...props }: FieldProps) {
   const [showPassword, setShowPassword] = useState(false);
   const isPassword = type === "password";
   const inputType = isPassword ? (showPassword ? "text" : "password") : type;
@@ -187,6 +189,9 @@ function Field({ label, name, type = "text", ...props }: FieldProps) {
           </button>
         )}
       </div>
+      {helperText && (
+        <p className="text-xs text-slate-500 mt-1">{helperText}</p>
+      )}
     </div>
   );
 }
