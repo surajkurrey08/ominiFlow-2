@@ -731,14 +731,6 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
                 </button>
                 <div className="thread-header-meta">
                   <span className="thread-channel">{selectedConversation.channel.name}</span>
-                  <span className={`status-tag status-${selectedConversation.status}`}>{selectedConversation.status}</span>
-                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                    selectedConversation.mode === "human"
-                      ? "bg-blue-100 text-blue-800 border border-blue-200"
-                      : "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                  }`}>
-                    {selectedConversation.mode === "human" ? "👤 Human Mode" : "🤖 Chatbot Mode"}
-                  </span>
                 </div>
               </header>
 
@@ -813,66 +805,6 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
                 {contactDetails?.email && <span className="ml-3">{contactDetails.email}</span>}
               </aside>
 
-              {/* Automation Mode Status Banner */}
-              {!bannerDismissed && (
-                selectedConversation.mode === "human" ? (
-                  <div className="mx-3.5 my-1 flex items-center justify-between rounded-lg bg-blue-50/90 border border-blue-200 px-3 py-1 text-xs text-blue-900 shadow-2xs">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-xs">👤</span>
-                      <p className="truncate text-xs">
-                        <span className="font-bold">Human Mode: </span>
-                        <span className="text-blue-700">Bot paused. Answer manually below.</span>
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => void handleModeChange("chatbot")}
-                        className="inline-flex items-center gap-1 rounded bg-white px-2 py-0.5 text-xs font-bold text-blue-700 border border-blue-300 shadow-2xs hover:bg-blue-50 transition cursor-pointer"
-                      >
-                        <span>Switch to Chatbot 🤖</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setBannerDismissed(true)}
-                        className="text-blue-400 hover:text-blue-700 px-1 text-xs font-bold leading-none cursor-pointer"
-                        title="Dismiss banner"
-                        aria-label="Dismiss banner"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mx-3.5 my-1 flex items-center justify-between rounded-lg bg-emerald-50/90 border border-emerald-200 px-3 py-1 text-xs text-emerald-900 shadow-2xs">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-xs">🤖</span>
-                      <p className="truncate text-xs">
-                        <span className="font-bold">Chatbot Mode: </span>
-                        <span className="text-emerald-700">Flows and AI respond automatically.</span>
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => void handleModeChange("human")}
-                        className="inline-flex items-center gap-1 rounded bg-white px-2 py-0.5 text-xs font-bold text-emerald-700 border border-emerald-300 shadow-2xs hover:bg-emerald-50 transition cursor-pointer"
-                      >
-                        <span>Take Over (Human) 👤</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setBannerDismissed(true)}
-                        className="text-emerald-400 hover:text-emerald-700 px-1 text-xs font-bold leading-none cursor-pointer"
-                        title="Dismiss banner"
-                        aria-label="Dismiss banner"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                )
-              )}
 
               <div className="thread-date-divider"><span>Conversation history</span></div>
 

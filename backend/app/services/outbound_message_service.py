@@ -262,6 +262,17 @@ def send_message(
         template_components = []
         message_type = MessageType.INTERACTIVE
         message_text = data.body
+        options_text = []
+        for i, b in enumerate(data.buttons, start=1):
+            title = b.title or f"Option {i}"
+            options_text.append(f"{i}. {title}")
+        for i, item in enumerate(getattr(data, "list_items", []) or [], start=len(options_text) + 1):
+            title = getattr(item, "title", None) or f"Option {i}"
+            options_text.append(f"{i}. {title}")
+        if options_text and channel.channel_type != ChannelType.WHATSAPP:
+            message_text = f"{data.body.strip()}\n\n" + "\n".join(options_text)
+            if data.footer:
+                message_text += f"\n\n_{data.footer.strip()}_"
         message_metadata = {
             "interactive": {
                 "interactive_type": getattr(data, "interactive_type", "button"),

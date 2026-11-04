@@ -6,7 +6,9 @@ const backendBaseUrl =
   process.env.OMNIFLOW_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? API_BASE_URL;
 
 export function backendApiUrl(path: string) {
-  return new URL(`/api/v1${path}`, backendBaseUrl);
+  const normalized = path.startsWith("/api/v1") ? path.slice(7) : path;
+  const clean = normalized.startsWith("/") ? normalized : `/${normalized}`;
+  return new URL(`/api/v1${clean}`, backendBaseUrl);
 }
 
 export async function parseJson(response: Response): Promise<unknown> {

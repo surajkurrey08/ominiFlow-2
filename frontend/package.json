@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 0.0.0.0",
     "build": "next build",
     "start": "next start",
     "test": "npm run test:ai && npm run test:auth && npm run test:inbox && npm run test:channels && npm run test:contacts && npm run test:team && npm run test:templates && npm run test:realtime && npm run test:automations",
