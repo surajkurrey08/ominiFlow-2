@@ -19,6 +19,8 @@ backend/var/
 AdminSide/.env
 AdminSide/**/.env
 .cache/
+# Local ngrok Windows executable
+/backend/ngrok.exe
 .deployment/
 
 # VPS production backups

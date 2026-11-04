@@ -21,6 +21,8 @@ x-backend: &backend
     REDIS_URL: redis://redis:6379/0
     FRONTEND_URL: https://fmfilms.in
     FRONTEND_ORIGINS: https://fmfilms.in,https://www.fmfilms.in,https://admin.fmfilms.in
+    WEB_CHAT_PUBLIC_FRONTEND_URL: ${WEB_CHAT_PUBLIC_FRONTEND_URL:-https://fmfilms.in}
+    WEB_CHAT_PUBLIC_BACKEND_URL: ${WEB_CHAT_PUBLIC_BACKEND_URL:-https://fmfilms.in}
     META_OAUTH_REDIRECT_URI: https://fmfilms.in/api/v1/channels/oauth/callback
     MEDIA_STORAGE_BACKEND: local
     MEDIA_LOCAL_ROOT: /app/var/media

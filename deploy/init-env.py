@@ -15,6 +15,8 @@ def main():
         "DATABASE_URL": f"postgresql+psycopg://fmfilms:{password}@postgres:5432/fmfilms",
         "REDIS_URL": "redis://redis:6379/0",
         "FRONTEND_URL": "https://fmfilms.in",
+        "WEB_CHAT_PUBLIC_FRONTEND_URL": "https://fmfilms.in",
+        "WEB_CHAT_PUBLIC_BACKEND_URL": "https://fmfilms.in",
         "FRONTEND_ORIGINS": "https://fmfilms.in,https://www.fmfilms.in,https://admin.fmfilms.in",
         "JWT_SECRET": secrets.token_hex(48),
         "JWT_ALGORITHM": "HS256",

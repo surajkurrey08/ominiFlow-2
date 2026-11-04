@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     # for existing deployments that configure a single frontend origin.
     frontend_origins: str = ""
 
+    # Platform-owned addresses automatically supplied to website plugins.
+    # Customers never enter these in the Web Channel form.
+    web_chat_public_frontend_url: str = ""
+    web_chat_public_backend_url: str = "http://localhost:8000"
+
     jwt_secret: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 43200  # 30 days token lifespan

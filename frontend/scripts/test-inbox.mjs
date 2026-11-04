@@ -22,6 +22,13 @@ const conversationId = "123e4567-e89b-42d3-a456-426614174000";
 const uuid = "123e4567-e89b-42d3-a456-426614174001";
 
 describe("Inbox proxy allowlist", () => {
+  it("allows supported channel filters and rejects unsupported providers", () => {
+    for (const type of ["whatsapp", "instagram", "facebook", "web_chat"]) {
+      const target = buildInboxProxyTarget("GET", ["conversations"], new URLSearchParams(`channel_type=${type}&page_size=1`));
+      assert.equal(target.query.get("channel_type"), type);
+    }
+    assert.equal(buildInboxProxyTarget("GET", ["conversations"], new URLSearchParams("channel_type=email")), null);
+  });
   it("forwards only supported conversation filters and pagination", () => {
     const target = buildInboxProxyTarget(
       "GET",

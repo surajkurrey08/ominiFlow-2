@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { WebChatSetupDialog } from "./web-chat-setup-dialog";
 
 import {
   ChannelApiError,
@@ -437,7 +438,7 @@ export function ChannelsClient() {
   const [deleteTarget, setDeleteTarget] = useState<ChannelConnection | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const [creatingWebChat, setCreatingWebChat] = useState(false);
+  const [webChatSetup, setWebChatSetup] = useState<{ channel: ChannelConnection | null } | null>(null);
   const [embeddedSignupBusy, setEmbeddedSignupBusy] = useState(false);
   const [whatsAppModal, setWhatsAppModal] = useState<WhatsAppSignupModalState | null>(null);
 
@@ -914,11 +915,11 @@ export function ChannelsClient() {
     window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
 
     if (connectError) {
-      setNotice({ kind: "error", text: OAUTH_ERROR_TEXT[connectError] ?? "The Meta connection could not be completed." });
+      queueMicrotask(() => setNotice({ kind: "error", text: OAUTH_ERROR_TEXT[connectError] ?? "The Meta connection could not be completed." }));
       return;
     }
     if (connect && (provider === "facebook" || provider === "instagram")) {
-      void loadOAuthAssets(connect, provider);
+      queueMicrotask(() => { void loadOAuthAssets(connect, provider); });
     }
   }, [loadOAuthAssets]);
 
@@ -946,20 +947,8 @@ export function ChannelsClient() {
     }
   }
 
-  async function createWebChat() {
-    setCreatingWebChat(true);
-    setNotice(null);
-    try {
-      const created = await createChannel({ channel_type: "web_chat", name: "Web Chat" });
-      await connectWebChat(created.id);
-      setNotice({ kind: "success", text: "Web Chat channel created. Copy the widget snippet below to embed it." });
-      await refresh();
-    } catch (error) {
-      handleError(error, "Could not create the Web Chat channel.");
-      void refresh();
-    } finally {
-      setCreatingWebChat(false);
-    }
+  function createWebChat() {
+    setWebChatSetup({ channel: null });
   }
 
   async function activateWebChat(channel: ChannelConnection) {
@@ -1040,6 +1029,7 @@ export function ChannelsClient() {
 
   return (
     <section className="page-enter max-w-5xl">
+      {webChatSetup && <WebChatSetupDialog channel={webChatSetup.channel} onClose={() => setWebChatSetup(null)} onSaved={refresh} />}
       <header className="channel-header">
         <div>
           <p className="eyebrow">OMNIFLOW WORKSPACE</p>
@@ -1072,8 +1062,8 @@ export function ChannelsClient() {
           <button type="button" className="channel-secondary-btn" disabled={oauthStarting === "instagram"} onClick={() => void beginMetaOAuth("instagram")}>
             <span aria-hidden="true">+</span> {oauthStarting === "instagram" ? "Redirecting…" : "Connect Instagram"}
           </button>
-          <button type="button" className="channel-secondary-btn" disabled={creatingWebChat} onClick={() => void createWebChat()}>
-            <span aria-hidden="true">+</span> {creatingWebChat ? "Creating…" : "Create Web Chat"}
+          <button type="button" className="channel-secondary-btn" onClick={() => void createWebChat()}>
+            <span aria-hidden="true">+</span> Create Web Chat
           </button>
         </div>
       </header>
@@ -1110,8 +1100,8 @@ export function ChannelsClient() {
             <button type="button" className="channel-secondary-btn" onClick={() => openConnect(null)}>
               Manual setup
             </button>
-            <button type="button" className="channel-secondary-btn" disabled={creatingWebChat} onClick={() => void createWebChat()}>
-              {creatingWebChat ? "Creating…" : "Create Web Chat"}
+            <button type="button" className="channel-secondary-btn" onClick={() => void createWebChat()}>
+              Create Web Chat
             </button>
           </div>
         </div>
@@ -1123,6 +1113,7 @@ export function ChannelsClient() {
             const isWebChat = channel.channel_type === "web_chat";
             const isFacebook = channel.channel_type === "facebook";
             const isInstagram = channel.channel_type === "instagram";
+            const website = channel.provider_metadata?.web_chat as { website_origin?: string; paired_at?: string } | undefined;
             const isConnected = channel.status === "connected";
             const isBusy = busy[channel.id] ?? false;
             const check = checks[channel.id];
@@ -1137,26 +1128,26 @@ export function ChannelsClient() {
                     <strong>{channel.name}</strong>
                     <span>{PROVIDER_LABEL[channel.channel_type] ?? channel.channel_type}</span>
                   </div>
-                  <span className={`channel-pill ${meta.tone}`}>{meta.label}</span>
+                  <span className={`channel-pill ${meta.tone}`}>{isWebChat && isConnected ? (website?.paired_at ? "Authorized" : "Ready") : meta.label}</span>
                 </div>
 
                 <dl className="channel-facts">
                   <div>
-                    <dt>Phone / account</dt>
+                    <dt>{isWebChat ? "Website" : "Phone / account"}</dt>
                     <dd>
-                      {channel.display_phone_number || (channel.provider_metadata as Record<string, string> | undefined)?.display_phone_number || channel.external_account_id || "—"}
+                      {isWebChat ? (website?.website_origin ?? "Not configured") : channel.display_phone_number || (channel.provider_metadata as Record<string, string> | undefined)?.display_phone_number || channel.external_account_id || "—"}
                       {channel.display_phone_number && channel.external_account_id && (
                         <span className="block text-[10px] text-slate-400 font-mono">ID: {channel.external_account_id}</span>
                       )}
                     </dd>
                   </div>
-                  <div><dt>Business ID</dt><dd>{channel.external_business_id ?? "—"}</dd></div>
-                  <div><dt>Credentials</dt><dd>{channel.has_credentials ? "Stored (encrypted)" : "None"}</dd></div>
-                  <div><dt>Last connected</dt><dd>{formatTime(channel.last_connected_at)}</dd></div>
+                  <div><dt>{isWebChat ? "Installation" : "Business ID"}</dt><dd>{isWebChat ? (website?.paired_at ? "Website admin approved" : "Authorization required") : channel.external_business_id ?? "—"}</dd></div>
+                  {!isWebChat && <div><dt>Credentials</dt><dd>{channel.has_credentials ? "Stored (encrypted)" : "None"}</dd></div>}
+                  <div><dt>{isWebChat ? "Channel enabled" : "Last connected"}</dt><dd>{formatTime(channel.last_connected_at)}</dd></div>
                   <div>
-                    <dt>Webhook</dt>
+                    <dt>{isWebChat ? "Website authorization" : "Webhook"}</dt>
                     <dd>
-                      {check
+                      {isWebChat ? (website?.paired_at ? formatTime(website.paired_at) : "Connect the website plugin") : check
                         ? check.webhook_subscribed === null
                           ? "Unknown"
                           : check.webhook_subscribed
@@ -1207,12 +1198,17 @@ export function ChannelsClient() {
                   </p>
                 )}
 
-                {isWebChat && isConnected && channel.external_account_id && (
-                  <div className="channel-check channel-check-ok" role="group" aria-label="Web Chat installation">
-                    <strong>Widget install</strong>
-                    <span>Public key: <code>{channel.external_account_id}</code></span>
-                    <span>Paste this snippet before <code>&lt;/body&gt;</code> on your website:</span>
-                    <pre style={{ whiteSpace: "pre-wrap", fontSize: "11px", margin: "4px 0 0", userSelect: "all" }}>{widgetSnippet(channel.external_account_id)}</pre>
+                {isWebChat && isConnected && (
+                  <div className="web-chat-card-installation">
+                    <strong>{website?.paired_at ? "Website authorized" : "Connect your website"}</strong>
+                    <p>{website?.paired_at ? "Open setup to check chat activity or authorize again." : "Approve the connection in your website admin. Settings are filled automatically."}</p>
+                    <button type="button" className="channel-action channel-action-primary" disabled={isBusy} onClick={() => setWebChatSetup({ channel })}>
+                      {website?.paired_at ? "Manage website" : "Connect website"}
+                    </button>
+                    <details><summary>Manual widget installation</summary>
+                      <p>For websites without the connector, use the widget snippet with your public Omniflow service URL.</p>
+                      <pre>{widgetSnippet(channel.external_account_id ?? "")}</pre>
+                    </details>
                   </div>
                 )}
 

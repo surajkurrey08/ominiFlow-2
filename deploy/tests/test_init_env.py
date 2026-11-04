@@ -26,6 +26,8 @@ class InitEnvTests(unittest.TestCase):
                 self.assertIn(':' + values['POSTGRES_PASSWORD'] + '@postgres:5432/fmfilms', values['DATABASE_URL'])
                 self.assertGreaterEqual(len(values['JWT_SECRET']), 32)
                 self.assertEqual(values['APP_ENV'], 'production')
+                self.assertEqual(values['WEB_CHAT_PUBLIC_FRONTEND_URL'], 'https://fmfilms.in')
+                self.assertEqual(values['WEB_CHAT_PUBLIC_BACKEND_URL'], 'https://fmfilms.in')
                 self.assertTrue(values['CHANNEL_CREDENTIAL_KEYS'])
                 self.assertNotIn(values['JWT_SECRET'], output.getvalue())
                 with contextlib.redirect_stdout(output):

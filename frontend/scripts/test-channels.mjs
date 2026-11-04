@@ -14,12 +14,46 @@ const { outputText } = ts.transpileModule(source, {
 });
 writeFileSync(join(outDir, "proxy-utils.mjs"), outputText);
 const { buildChannelProxyTarget } = await import(pathToFileURL(join(outDir, "proxy-utils.mjs")).href);
+const pairingSource = readFileSync(join(root, "src/lib/channels/website-pairing.ts"), "utf8");
+writeFileSync(join(outDir, "website-pairing.mjs"), ts.transpileModule(pairingSource, {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText);
+const { websiteOrigin, connectorEvent } = await import(pathToFileURL(join(outDir, "website-pairing.mjs")).href);
 after(() => rmSync(outDir, { recursive: true, force: true }));
 
 const id = "123e4567-e89b-42d3-a456-426614174000";
 const params = (q = "") => new URLSearchParams(q);
 
 describe("Channel proxy allowlist", () => {
+  it("allows website setup, pairing and status without forwarding private extras", () => {
+    const setup = { name: "BookMyVilla", website_url: "https://bookmyvilla.online" };
+    assert.equal(buildChannelProxyTarget("POST", ["web-chat", "setup"], params(), setup).backendPath, "/channels/web-chat/setup");
+    assert.equal(buildChannelProxyTarget("POST", ["web-chat", "setup"], params(), { ...setup, tenant_id: id }), null);
+    assert.equal(buildChannelProxyTarget("PATCH", [id, "web-chat", "website"], params(), setup).method, "PATCH");
+    assert.equal(buildChannelProxyTarget("POST", [id, "web-chat", "pairing"], params(), { opener_origin: "https://chat.bookmyvilla.online" }).backendPath, `/channels/${id}/web-chat/pairing`);
+    assert.equal(buildChannelProxyTarget("POST", [id, "web-chat", "pairing"], params(), { opener_origin: "https://chat.bookmyvilla.online", token: "do-not-forward" }), null);
+    assert.equal(buildChannelProxyTarget("GET", [id, "web-chat", "installation"], params()).method, "GET");
+    assert.equal(buildChannelProxyTarget("GET", [id, "web-chat", "installation"], params("tenant_id=other")), null);
+    assert.equal(buildChannelProxyTarget("POST", [id, "web-chat", "pairing", "cancel"], params(), { pairing_id: id }).method, "POST");
+    assert.equal(buildChannelProxyTarget("POST", [id, "web-chat", "pairing", "cancel"], params()), null);
+    assert.equal(buildChannelProxyTarget("POST", ["web-chat", "pairings", id, "complete"], params(), {}), null);
+  });
+
+  it("accepts website origins and rejects unsafe addresses", () => {
+    assert.equal(websiteOrigin("https://bookmyvilla.online/"), "https://bookmyvilla.online");
+    assert.equal(websiteOrigin("http://localhost:5173"), "http://localhost:5173");
+    for (const value of ["javascript:alert(1)", "https://user:pass@site.com", "https://site.com/admin", "https://site.com?key=secret", "http://site.com"]) assert.equal(websiteOrigin(value), null);
+  });
+
+  it("rejects unsolicited window messages and mismatched pairing IDs", () => {
+    const popup = {};
+    const data = { type: "ready", protocol: "omniflow-pairing-v1", request_id: id };
+    assert.equal(connectorEvent({ source: popup, data }, popup, id), data);
+    assert.equal(connectorEvent({ source: {}, data }, popup, id), null);
+    assert.equal(connectorEvent({ source: popup, data: { ...data, request_id: "other" } }, popup, id), null);
+    assert.equal(connectorEvent({ source: popup, data: { ...data, protocol: "other" } }, popup, id), null);
+    assert.equal(connectorEvent({ source: popup, data: null }, popup, id), null);
+  });
   it("forwards list filters and rejects unknown ones", () => {
     const target = buildChannelProxyTarget("GET", [], params("page=2&page_size=10&status=connected&channel_type=whatsapp&search=acme"));
     assert.equal(target.backendPath, "/channels");
