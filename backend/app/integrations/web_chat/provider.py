@@ -91,6 +91,46 @@ class WebChatProvider(ChannelProvider):
         # caller) is the delivery. Return a unique id for external_message_id.
         return f"wc_out_{uuid.uuid4().hex}"
 
+    def send_interactive_message(
+        self,
+        credentials: ProviderCredentials,
+        phone_number_id: str,
+        recipient: str,
+        body: str,
+        header: dict[str, Any] | None = None,
+        footer: str | None = None,
+        reply_buttons: list[dict[str, str]] | None = None,
+        url_buttons: list[dict[str, str]] | None = None,
+        call_buttons: list[dict[str, str]] | None = None,
+        list_items: list[dict[str, str]] | None = None,
+        button_text: str | None = None,
+    ) -> str:
+        return f"wc_out_{uuid.uuid4().hex}"
+
+    def send_template_message(
+        self,
+        credentials: ProviderCredentials,
+        phone_number_id: str,
+        recipient: str,
+        template_name: str,
+        language: str,
+        components: list[dict[str, Any]],
+    ) -> str:
+        return f"wc_out_{uuid.uuid4().hex}"
+
+    def send_media_message(
+        self,
+        credentials: ProviderCredentials,
+        phone_number_id: str,
+        recipient: str,
+        media_type: str,
+        media_id: str | None = None,
+        media_url: str | None = None,
+        caption: str | None = None,
+        filename: str | None = None,
+    ) -> str:
+        return f"wc_out_{uuid.uuid4().hex}"
+
     # ---------- inbound ----------
 
     def normalize_inbound_message(

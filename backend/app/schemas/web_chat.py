@@ -20,6 +20,7 @@ class WebChatMessageOut(BaseModel):
     direction: str
     text: str | None
     created_at: datetime
+    buttons: list[dict[str, str]] | None = None
 
 
 class WebChatInboundResponse(BaseModel):

@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
 const backendUrl = (
@@ -10,6 +11,9 @@ const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: false,
   devIndicators: false,
+  turbopack: {
+    root: path.resolve(__dirname),
+  },
   async rewrites() {
     return [
       {

@@ -62,7 +62,10 @@
     ".ofw-foot button{background:#176b59;color:#fff;border:none;border-radius:8px;padding:0 14px;cursor:pointer;font-size:14px}" +
     ".ofw-foot button:disabled{opacity:.5;cursor:default}" +
     ".ofw-state{font-size:11px;color:#64748b;text-align:center;padding:4px}" +
-    ".ofw-state.ofw-err{color:#b91c1c}";
+    ".ofw-state.ofw-err{color:#b91c1c}" +
+    ".ofw-buttons{display:flex;flex-direction:column;gap:6px;margin:4px 0 10px 0;max-width:80%}" +
+    ".ofw-choice-btn{background:#fff;color:#176b59;border:1.5px solid #176b59;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer;text-align:left;transition:all .15s ease}" +
+    ".ofw-choice-btn:hover{background:#176b59;color:#fff}";
   var style = document.createElement("style");
   style.textContent = css;
   document.head.appendChild(style);
@@ -102,6 +105,29 @@
     el.className = "ofw-msg " + (msg.direction === "agent" ? "ofw-agent" : "ofw-visitor");
     el.textContent = msg.text || "";
     body.appendChild(el);
+
+    if (msg.buttons && msg.buttons.length && msg.direction === "agent") {
+      var btnBox = document.createElement("div");
+      btnBox.className = "ofw-buttons";
+      msg.buttons.forEach(function (btn) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "ofw-choice-btn";
+        b.textContent = btn.title || btn.id;
+        b.onclick = function () {
+          var all = btnBox.querySelectorAll("button");
+          for (var i = 0; i < all.length; i++) {
+            all[i].disabled = true;
+            all[i].style.opacity = "0.5";
+            all[i].style.cursor = "default";
+          }
+          send(btn.title || btn.id);
+        };
+        btnBox.appendChild(b);
+      });
+      body.appendChild(btnBox);
+    }
+
     body.scrollTop = body.scrollHeight;
     if (msg.created_at) lastAfter = msg.created_at;
   }

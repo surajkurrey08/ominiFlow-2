@@ -222,9 +222,7 @@ export function SettingsClient() {
                   {flows.length === 0 && (
                     <p className="mt-2 text-[#9a6a16] text-[12px]">No flows yet — create one on the Flow page first.</p>
                   )}
-                  <p className="mt-3 text-[#9a6a16] text-[12px]">
-                    This flow will be triggered unconditionally when a user types anything that doesn't match an exact keyword rule.
-                  </p>
+
                 </div>
               )}
             </div>

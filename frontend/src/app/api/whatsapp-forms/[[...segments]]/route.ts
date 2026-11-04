@@ -29,7 +29,7 @@ async function handle(request: NextRequest, context: Context, method: string) {
     }
   }
   
-  const url = backendApiUrl(`/api/v1/whatsapp-forms${pathParams}`);
+  const url = backendApiUrl(`/whatsapp-forms${pathParams}`);
   url.search = request.nextUrl.search;
   
   const headers: Record<string, string> = {};

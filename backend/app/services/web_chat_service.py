@@ -229,9 +229,20 @@ def _to_out(message: Message) -> WebChatMessageOut:
     # Visitors see their own messages as inbound->"visitor" and agent
     # replies as outbound->"agent".
     direction = "agent" if message.direction == MessageDirection.OUTBOUND else "visitor"
+    buttons: list[dict[str, str]] = []
+    if message.metadata and isinstance(message.metadata, dict):
+        interactive = message.metadata.get("interactive") or {}
+        for b in interactive.get("buttons") or []:
+            if isinstance(b, dict) and b.get("title"):
+                buttons.append({"id": str(b.get("id") or b["title"]), "title": str(b["title"])})
+        for item in interactive.get("list_items") or []:
+            if isinstance(item, dict) and item.get("title"):
+                buttons.append({"id": str(item.get("id") or item["title"]), "title": str(item["title"])})
+
     return WebChatMessageOut(
         id=str(message.id),
         direction=direction,
         text=message.text,
         created_at=message.created_at,
+        buttons=buttons or None,
     )
