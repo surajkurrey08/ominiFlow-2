@@ -150,6 +150,22 @@ view; it does not claim a persisted conversation favorite.
 
 ## Do's and Don'ts
 
+Flow creation selects one actual channel connection, by name, through the shared
+ChannelConnectionSelect. Provider type is derived from that connection rather
+than used as a substitute for website ownership. The builder and list expose the
+assignment; existing unassigned content remains visible and needs explicit
+assignment. Keyword forms require a channel and show flows only from that same
+connection. Changing the keyword channel clears its selected flow. Channel and
+flow loading failures preserve drafts and provide retry. AppDialog owns both
+creation forms; native select popups remain platform-owned.
+
+Flow and Keyword lists share a compact white table surface, short headings,
+purple primary actions, channel filters and bottom pagination (12 per page).
+Keywords retain Table/Cards and secondary filters without decorative KPI cards,
+long onboarding text or priority explanations. Row channel and status remain
+visible, including Needs channel for legacy records. Header action labels stay
+on one line with matching heights; controls can wrap as a group on narrow views.
+
 Website connection uses the existing Channels controls and shared AppDialog.
 Create Web Chat collects a website name and origin, then immediately displays
 Frontend URL, Backend URL and the generated Public widget key with Copy controls.

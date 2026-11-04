@@ -24,26 +24,30 @@ export function buildKeywordProxyTarget(
     if (method === "GET") return { backendPath: "/keywords", method: "GET", query: empty };
     if (method === "POST") {
       if (!isRecord(body)) return null;
+      if (Object.keys(body).some(key=>!["keyword_text","match_type","channel_connection_id","is_active","flow_id","reply_text"].includes(key))) return null;
+      if (typeof body.channel_connection_id !== "string" || !UUID_PATTERN.test(body.channel_connection_id)) return null;
       if (typeof body.keyword_text !== "string" || body.keyword_text.trim().length < 1 || body.keyword_text.length > 255) return null;
       if (typeof body.match_type !== "string" || !["exact", "contains", "starts_with", "ends_with"].includes(body.match_type)) return null;
       
       const out: Record<string, unknown> = { 
+        channel_connection_id: body.channel_connection_id,
         keyword_text: body.keyword_text.trim(), 
         match_type: body.match_type 
       };
       
+      if ("is_active" in body && typeof body.is_active !== "boolean") return null;
       if ("is_active" in body && typeof body.is_active === "boolean") {
         out.is_active = body.is_active;
       }
       if ("flow_id" in body) {
         if (body.flow_id === null || (typeof body.flow_id === "string" && UUID_PATTERN.test(body.flow_id))) {
           out.flow_id = body.flow_id;
-        }
+        } else return null;
       }
       if ("reply_text" in body) {
-        if (body.reply_text === null || typeof body.reply_text === "string") {
+        if (body.reply_text === null || (typeof body.reply_text === "string" && body.reply_text.length <= 4096)) {
           out.reply_text = body.reply_text;
-        }
+        } else return null;
       }
       
       return { backendPath: "/keywords", method: "POST", query: empty, body: out };
@@ -56,7 +60,13 @@ export function buildKeywordProxyTarget(
     if (method === "GET") return { backendPath: `/keywords/${id}`, method: "GET", query: empty };
     if (method === "PATCH") {
       if (!isRecord(body)) return null;
+      if (Object.keys(body).some(key=>!["keyword_text","match_type","channel_connection_id","is_active","flow_id","reply_text"].includes(key))) return null;
       const out: Record<string, unknown> = {};
+      if ("channel_connection_id" in body) {
+        if (typeof body.channel_connection_id !== "string" || !UUID_PATTERN.test(body.channel_connection_id)) return null;
+        out.channel_connection_id = body.channel_connection_id;
+      }
+      if ("keyword_text" in body && (typeof body.keyword_text !== "string" || !body.keyword_text.trim() || body.keyword_text.length > 255)) return null;
       if ("keyword_text" in body && typeof body.keyword_text === "string") out.keyword_text = body.keyword_text.trim();
       if ("match_type" in body && typeof body.match_type === "string" && ["exact", "contains", "starts_with", "ends_with"].includes(body.match_type)) {
         out.match_type = body.match_type;
@@ -65,12 +75,12 @@ export function buildKeywordProxyTarget(
       if ("flow_id" in body) {
         if (body.flow_id === null || (typeof body.flow_id === "string" && UUID_PATTERN.test(body.flow_id))) {
           out.flow_id = body.flow_id;
-        }
+        } else return null;
       }
       if ("reply_text" in body) {
-        if (body.reply_text === null || typeof body.reply_text === "string") {
+        if (body.reply_text === null || (typeof body.reply_text === "string" && body.reply_text.length <= 4096)) {
           out.reply_text = body.reply_text;
-        }
+        } else return null;
       }
       if (Object.keys(out).length === 0) return null;
       return { backendPath: `/keywords/${id}`, method: "PATCH", query: empty, body: out };

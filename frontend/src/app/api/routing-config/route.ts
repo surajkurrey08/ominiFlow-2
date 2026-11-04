@@ -41,6 +41,12 @@ async function handle(request: NextRequest, method: "GET" | "PUT") {
   }
 
   const url = backendApiUrl("/routing-config");
+  const channelId = request.nextUrl.searchParams.get("channel_connection_id");
+  if ([...request.nextUrl.searchParams.keys()].some(key => key !== "channel_connection_id") ||
+      (channelId !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(channelId))) {
+    return NextResponse.json({ error: "Select a valid channel." }, { status: 400 });
+  }
+  if (channelId !== null) url.searchParams.set("channel_connection_id", channelId);
 
   let upstream: Response;
   try {

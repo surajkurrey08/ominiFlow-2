@@ -1056,7 +1056,7 @@ export function NodeEditor({
                   onChange={(e) => onChange({ apiBody: e.target.value })}
                   rows={3}
                   placeholder='{"phone": "{{contact_phone}}"}'
-                  className="w-full rounded-xl border border-slate-200 p-2.5 text-xs font-mono outline-none focus:border-blue-500"
+                  className="resize-none w-full rounded-xl border border-slate-200 p-2.5 text-xs font-mono outline-none focus:border-blue-500"
                 />
               </label>
             )}
@@ -1218,7 +1218,7 @@ export function NodeEditor({
                 onChange={(e) => onChange({ message: e.target.value })}
                 rows={3}
                 placeholder="Lead details: {{contact_name}} - {{contact_phone}}"
-                className="w-full rounded-xl border border-slate-200 p-2.5 text-xs outline-none focus:border-blue-500"
+                className="resize-none w-full rounded-xl border border-slate-200 p-2.5 text-xs outline-none focus:border-blue-500"
               />
             </label>
           </div>
@@ -1301,7 +1301,7 @@ export function NodeEditor({
                 onChange={(e) => onChange({ message: e.target.value })}
                 rows={3}
                 placeholder="Please tap below to fill out your details:"
-                className="w-full rounded-xl border border-slate-200 p-2.5 text-xs outline-none focus:border-blue-500"
+                className="resize-none w-full rounded-xl border border-slate-200 p-2.5 text-xs outline-none focus:border-blue-500"
               />
             </label>
           </div>

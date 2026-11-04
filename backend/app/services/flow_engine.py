@@ -778,6 +778,13 @@ def _execute_zoho_crm(session: FlowSession, node: dict[str, Any], contact: Conta
 # --------------------------------------------------------------------------
 
 def _run(db: Session, session: FlowSession) -> None:
+    from app.services.channel_scope_service import flow_matches_channel
+    conversation = db.get(Conversation, session.conversation_id)
+    if conversation is None or not flow_matches_channel(db.get(Flow, session.flow_id), session.tenant_id, conversation.channel_connection_id):
+        session.status = FlowSessionStatus.FAILED.value
+        session.detail = "Flow is not assigned to this conversation channel."
+        db.commit()
+        return
     contact = db.get(Contact, session.contact_id)
     nodes = _node_map(session)
     node_id = session.current_node_id
@@ -831,6 +838,9 @@ def active_session_for(db: Session, tenant_id: uuid.UUID, conversation_id: uuid.
 
 def start_session(db: Session, flow: Flow, conversation: Conversation, contact: Contact, actor_user_id: uuid.UUID | None) -> FlowSession | None:
     """Begin a flow for a conversation and run until it waits or ends."""
+    from app.services.channel_scope_service import flow_matches_channel
+    if conversation.tenant_id != flow.tenant_id or not flow_matches_channel(flow, conversation.tenant_id, conversation.channel_connection_id):
+        return None
     if active_session_for(db, flow.tenant_id, conversation.id) is not None:
         return None  # one live flow per conversation
     start = _start_node(flow.nodes or [])
@@ -857,6 +867,13 @@ def start_session(db: Session, flow: Flow, conversation: Conversation, contact: 
 def resume_with_reply(db: Session, session: FlowSession, reply_text: str) -> None:
     """Advance a WAITING session using the customer's reply."""
     if session.status != FlowSessionStatus.WAITING.value or session.wait_kind != FlowSessionWait.REPLY.value:
+        return
+    from app.services.channel_scope_service import flow_matches_channel
+    conversation = db.get(Conversation, session.conversation_id)
+    if conversation is None or not flow_matches_channel(db.get(Flow, session.flow_id), session.tenant_id, conversation.channel_connection_id):
+        session.status = FlowSessionStatus.FAILED.value
+        session.detail = "Flow is not assigned to this conversation channel."
+        db.commit()
         return
     nodes = _node_map(session)
     node = nodes.get(session.waiting_node_id or "")
@@ -890,7 +907,9 @@ def resume_with_reply(db: Session, session: FlowSession, reply_text: str) -> Non
         if handle is None:
             # Check if this input matches an active keyword to interrupt or restart
             from app.services import keyword_trigger_service
-            kw = keyword_trigger_service.find_matching_keyword(db, session.tenant_id, actual_text)
+            kw = keyword_trigger_service.find_matching_keyword(
+                db, session.tenant_id, actual_text, channel_connection_id=conversation.channel_connection_id,
+            )
             if kw is not None and (kw.flow_id is not None or (kw.reply_text and kw.reply_text.strip())):
                 # Complete the stuck session so the keyword trigger can execute cleanly
                 session.status = FlowSessionStatus.COMPLETED.value

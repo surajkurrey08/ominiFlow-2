@@ -16,9 +16,16 @@ class Keyword(Base, UUIDMixin, TimestampMixin):
     flow_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("flows.id", ondelete="SET NULL"), nullable=True)
     reply_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # Legacy unassigned rows remain visible but never match incoming messages.
+    channel_connection_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("channel_connections.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     __table_args__ = (
         CheckConstraint("match_type IN ('exact', 'contains', 'starts_with', 'ends_with')", name="ck_keywords_match_type"),
         Index("ix_keywords_tenant_id", "tenant_id"),
-        UniqueConstraint("tenant_id", "keyword_text", "match_type", name="uq_keywords_tenant_text_match"),
+        UniqueConstraint("tenant_id", "keyword_text", "match_type", "channel_connection_id", name="uq_keywords_tenant_text_match_channel"),
     )

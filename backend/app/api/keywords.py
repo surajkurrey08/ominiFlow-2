@@ -15,9 +15,10 @@ def list_keywords_route(
     search: str | None = Query(None, max_length=255),
     match_type: str | None = Query(None),
     is_active: bool | None = Query(None),
+    channel_connection_id: uuid.UUID | None = Query(None),
 ):
     """List keywords for the tenant, with optional search and filters."""
-    return keyword_service.list_keywords(session, tenant.id, (search or "").strip() or None, match_type, is_active)
+    return keyword_service.list_keywords(session, tenant.id, (search or "").strip() or None, match_type, is_active, channel_connection_id)
 
 @router.get("/{keyword_id}", response_model=KeywordResponse)
 def get_keyword_route(

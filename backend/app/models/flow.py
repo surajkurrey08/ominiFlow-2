@@ -17,13 +17,17 @@ class FlowStatus(StrEnum):
 class Flow(Base, UUIDMixin, TimestampMixin):
     """
     A visual chat-flow (chatbot) configuration. The builder stores its
-    canvas as ``nodes`` and ``edges`` JSON; one flow can target one or more
-    channels (WhatsApp / Instagram / Messenger / Omnichannel).
+    canvas as ``nodes`` and ``edges`` JSON. Each flow targets one actual
+    channel connection; legacy provider labels are retained in ``channels``.
     """
 
     __tablename__ = "flows"
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    # Nullable only for existing records awaiting an explicit channel assignment.
+    channel_connection_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("channel_connections.id", ondelete="SET NULL"), nullable=True, index=True,
+    )
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     status: Mapped[str] = mapped_column(String(10), default=FlowStatus.DRAFT, server_default=FlowStatus.DRAFT.value, nullable=False)
     # Selected channels, e.g. ["whatsapp", "instagram"] or ["omnichannel"].

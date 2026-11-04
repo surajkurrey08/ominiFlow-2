@@ -1,5 +1,3 @@
-import type { PaginatedResponse } from "@/lib/api/client";
-
 export type MatchType = "exact" | "contains" | "starts_with" | "ends_with";
 
 export interface Keyword {
@@ -9,12 +7,15 @@ export interface Keyword {
   is_active: boolean;
   flow_id: string | null;
   flow_name: string | null;
+  channel_connection_id: string | null;
+  channel_name: string | null;
   reply_text: string | null;
   created_at: string;
   updated_at?: string;
 }
 
 export interface KeywordCreateInput {
+  channel_connection_id: string;
   keyword_text: string;
   match_type: MatchType;
   is_active?: boolean;
@@ -23,6 +24,7 @@ export interface KeywordCreateInput {
 }
 
 export interface KeywordUpdateInput {
+  channel_connection_id?: string;
   keyword_text?: string;
   match_type?: MatchType;
   is_active?: boolean;
@@ -73,7 +75,8 @@ async function request<T>(
     const message =
       payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
         ? payload.error
-        : "The keywords request could not be completed.";
+        : payload && typeof payload === "object" && "detail" in payload && typeof payload.detail === "string"
+          ? payload.detail : "The keywords request could not be completed.";
     throw new KeywordApiError(response.status, message);
   }
   return payload as T;
