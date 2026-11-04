@@ -27,3 +27,9 @@ docker-compose.yml.backup.*
 .env.backup.*
 .env.edited.*
 .env.before-repair.*
+
+# Local Backups
+Omniflow_COMPLETE_BACKUP_*
+Omniflow_FULL_BACKUP_*
+*.zip
+create_full_backup.ps1

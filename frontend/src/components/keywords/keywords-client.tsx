@@ -270,21 +270,13 @@ export function KeywordsClient() {
       {/* Top Header */}
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200">
         <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight">Keyword Triggers</h1>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-              Omnichannel
-            </span>
-          </div>
-          <p className="text-sm text-slate-500 mt-1">
-            Automatically trigger conversation flows or responses when customer messages match specified keywords across WhatsApp, Web Chat, Instagram, and Messenger.
-          </p>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Keyword Triggers</h1>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 px-3 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-sm font-semibold shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold shadow-2xs transition-all cursor-pointer disabled:opacity-50"
             disabled={loading}
             title="Refresh keyword rules"
             aria-label="Refresh keyword rules"
@@ -298,10 +290,10 @@ export function KeywordsClient() {
           </button>
           <button
             type="button"
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#00b050] hover:bg-[#009944] text-white rounded-xl text-sm font-bold shadow-sm transition-all"
+            className="inline-flex items-center gap-2 px-3.5 py-2 bg-[#00b050] hover:bg-[#009944] text-white rounded-xl text-sm font-bold shadow-sm transition-all"
             onClick={openCreateForm}
           >
-            <span className="text-lg leading-none">+</span>
+            <span className="text-base leading-none">+</span>
             <span>New Keyword Rule</span>
           </button>
         </div>
@@ -425,15 +417,9 @@ export function KeywordsClient() {
           </div>
         </div>
 
-        {/* Priority & Conflict Resolution Banner */}
-        <div className="flex items-center justify-between text-[11px] text-slate-500 bg-slate-50/70 px-3 py-2 rounded-xl border border-slate-100">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-700">Deterministic Conflict Resolution:</span>
-            <span>Rules are evaluated in priority sequence (oldest active first). First matching active rule triggers.</span>
-          </div>
-          <span className="hidden sm:inline font-semibold text-slate-400">
-            Showing {filtered.length} of {keywords.length} rules
-          </span>
+        {/* Rules Count */}
+        <div className="flex items-center justify-end text-[11px] font-semibold text-slate-400 px-1">
+          Showing {filtered.length} of {keywords.length} rules
         </div>
       </div>
 
@@ -651,18 +637,18 @@ export function KeywordsClient() {
         </div>
       ) : (
         /* GRID / CARDS VIEW */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {/* Create new card */}
           <button
             type="button"
-            className="flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/60 hover:bg-slate-100/80 transition min-h-[220px] text-center group cursor-pointer"
+            className="flex flex-col items-center justify-center p-4 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/60 hover:bg-slate-100/80 transition min-h-[160px] text-center group cursor-pointer"
             onClick={openCreateForm}
           >
-            <div className="w-11 h-11 rounded-2xl bg-[#00b050] text-white flex items-center justify-center text-2xl font-bold mb-3 shadow-sm group-hover:scale-105 transition-transform">
+            <div className="w-8 h-8 rounded-xl bg-[#00b050] text-white flex items-center justify-center text-lg font-bold mb-2 shadow-sm group-hover:scale-105 transition-transform">
               +
             </div>
-            <h3 className="font-bold text-slate-800 text-sm">Add Keyword Trigger</h3>
-            <p className="text-xs text-slate-500 mt-1 max-w-[200px]">
+            <h3 className="font-bold text-slate-800 text-xs">Add Keyword Trigger</h3>
+            <p className="text-[11px] text-slate-500 mt-0.5 max-w-[180px]">
               Trigger automation flows or responses on inbound customer messages
             </p>
           </button>
@@ -676,11 +662,11 @@ export function KeywordsClient() {
             return (
               <div
                 key={k.id}
-                className="bg-white border border-slate-200/90 rounded-2xl p-5 flex flex-col justify-between shadow-2xs hover:shadow-xs transition relative group min-h-[220px]"
+                className="bg-white border border-slate-200/90 rounded-xl p-3.5 flex flex-col justify-between shadow-2xs hover:shadow-xs transition relative group min-h-[160px]"
               >
                 {/* Card Header */}
                 <div>
-                  <div className="flex items-start justify-between gap-2 mb-2.5">
+                  <div className="flex items-start justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-1.5">
                       {k.is_active && pri !== undefined && (
                         <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-600 border border-slate-200">
@@ -688,7 +674,7 @@ export function KeywordsClient() {
                         </span>
                       )}
                       <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border ${meta.badgeClass}`}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${meta.badgeClass}`}
                       >
                         <span className="font-mono">{meta.symbol}</span>
                         <span>{meta.label}</span>
@@ -715,14 +701,14 @@ export function KeywordsClient() {
                     </div>
                   </div>
 
-                  <h3 className="font-bold text-slate-900 text-base leading-snug break-words">
+                  <h3 className="font-bold text-slate-900 text-sm leading-snug break-words">
                     &ldquo;{k.keyword_text}&rdquo;
                   </h3>
                 </div>
 
                 {/* Card Action Destination */}
-                <div className="my-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                <div className="my-2 p-2 bg-slate-50 rounded-lg border border-slate-100">
+                  <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">
                     Action Destination
                   </div>
                   {k.flow_id ? (
@@ -738,7 +724,7 @@ export function KeywordsClient() {
                   ) : k.reply_text ? (
                     <div className="flex items-center gap-2">
                       <span className="text-blue-600 font-bold text-xs">↩</span>
-                      <div className="text-xs text-slate-700 font-medium line-clamp-2">
+                      <div className="text-xs text-slate-700 font-medium line-clamp-1">
                         {k.reply_text}
                       </div>
                     </div>
@@ -748,7 +734,7 @@ export function KeywordsClient() {
                 </div>
 
                 {/* Card Footer */}
-                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-xs">
                   <span className="text-[11px] text-slate-500 flex items-center gap-1">
                     <span>🌐</span> All Channels
                   </span>
@@ -756,7 +742,7 @@ export function KeywordsClient() {
                   <button
                     type="button"
                     onClick={() => void toggleActive(k)}
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold transition ${
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition ${
                       k.is_active
                         ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                         : "bg-slate-100 text-slate-500 border border-slate-200"
