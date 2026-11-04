@@ -19,6 +19,8 @@
     "test:automations": "node --test scripts/test-automations.mjs"
   },
   "dependencies": {
+    "@icons-pack/react-simple-icons": "13.15.1",
+    "@phosphor-icons/react": "2.1.10",
     "@xyflow/react": "^12.12.0",
     "next": "16.3.8",
     "react": "19.2.8",

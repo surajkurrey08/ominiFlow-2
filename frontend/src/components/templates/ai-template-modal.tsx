@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { SparkleIcon, XIcon } from "@phosphor-icons/react";
+import { AppDialog } from "@/components/app-dialog";
 import { generateTemplatesAi, type AiTemplateDraft } from "@/lib/templates/browser";
 
 export const AI_TEMPLATE_DRAFT_KEY = "omniflow:ai-template-draft";
@@ -58,22 +60,23 @@ export function AiTemplateModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <AppDialog labelledBy="ai-template-title" onClose={onClose} busy={loading} className="template-ai-dialog">
       <div
-        className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-white shadow-xl flex flex-col"
-        onClick={(e) => e.stopPropagation()}
+        className="w-full rounded-2xl bg-white flex flex-col"
       >
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#aa42d4] text-white">✦</span>
-            <h3 className="text-lg font-bold text-slate-900">Create with AI</h3>
+            <SparkleIcon size={22} color="#6017ff" aria-hidden="true" />
+            <h2 id="ai-template-title" className="text-lg font-bold text-slate-900">Create with AI</h2>
           </div>
-          <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">✕</button>
+          <button type="button" onClick={onClose} disabled={loading} aria-label="Close AI template generator" className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><XIcon size={20} aria-hidden="true" /></button>
         </div>
 
         <div className="overflow-y-auto px-6 py-5">
-          <label className="block text-sm font-bold text-slate-700 mb-2">Describe your template</label>
+          <label htmlFor="ai-template-prompt" className="block text-sm font-bold text-slate-700 mb-2">Describe your template</label>
           <textarea
+            id="ai-template-prompt"
+            autoFocus
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             rows={3}
@@ -83,20 +86,20 @@ export function AiTemplateModal({
           />
           <div className="mt-3 grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">Category</label>
-              <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+              <label htmlFor="ai-template-category" className="block text-xs font-bold text-slate-600 mb-1">Category</label>
+              <select id="ai-template-category" value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
                 {CATEGORIES.map((c) => <option key={c} value={c}>{c === "Any" ? "Any" : c.charAt(0) + c.slice(1).toLowerCase()}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">Language</label>
-              <select value={language} onChange={(e) => setLanguage(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+              <label htmlFor="ai-template-language" className="block text-xs font-bold text-slate-600 mb-1">Language</label>
+              <select id="ai-template-language" value={language} onChange={(e) => setLanguage(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
                 {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
               </select>
             </div>
           </div>
 
-          {error && <div className="mt-3 rounded-lg bg-rose-50 px-4 py-2.5 text-sm text-rose-800">{error}</div>}
+          {error && <div className="mt-3 rounded-lg bg-rose-50 px-4 py-2.5 text-sm text-rose-800" role="alert">{error}</div>}
 
           <button
             onClick={() => void generate()}
@@ -148,6 +151,6 @@ export function AiTemplateModal({
           )}
         </div>
       </div>
-    </div>
+    </AppDialog>
   );
 }

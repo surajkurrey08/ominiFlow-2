@@ -86,7 +86,7 @@ async function handle(request: NextRequest, context: RouteContext, method: Proxy
   if (payload === null || typeof payload !== "object") {
     return NextResponse.json({ error: "The channel service returned an invalid response." }, { status: 502 });
   }
-  return NextResponse.json(payload, { status: 200 });
+  return NextResponse.json(payload, { status: 200, headers: { "Cache-Control": "no-store" } });
 }
 
 export function GET(request: NextRequest, context: RouteContext) {

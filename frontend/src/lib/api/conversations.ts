@@ -38,6 +38,7 @@ export interface ConversationListParams {
   page_size?: number;
   status?: ConversationStatus;
   channel_id?: string;
+  channel_type?: ChannelType;
   assigned_user_id?: string;
   unassigned?: boolean;
   unread?: boolean;

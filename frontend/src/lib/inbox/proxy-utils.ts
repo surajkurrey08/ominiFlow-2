@@ -2,7 +2,7 @@ export const INBOX_STATUSES = ["open", "pending", "resolved", "closed"] as const
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LIST_FILTERS = new Set([
-  "page", "page_size", "status", "channel_id", "assigned_user_id",
+  "page", "page_size", "status", "channel_id", "channel_type", "assigned_user_id",
   "unassigned", "unread", "search",
 ]);
 
@@ -71,6 +71,11 @@ export function buildInboxProxyTarget(
     if (status !== null) {
       if (!INBOX_STATUSES.includes(status as (typeof INBOX_STATUSES)[number])) return null;
       query.set("status", status);
+    }
+    const channelType = params.get("channel_type");
+    if (channelType !== null) {
+      if (!["whatsapp", "instagram", "facebook", "web_chat"].includes(channelType)) return null;
+      query.set("channel_type", channelType);
     }
     for (const key of ["channel_id", "assigned_user_id"]) {
       const value = params.get(key);

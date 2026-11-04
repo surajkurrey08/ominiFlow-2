@@ -71,6 +71,51 @@ export class ChannelApiError extends Error {
   }
 }
 
+export interface WebChatPairing {
+  pairing_id: string;
+  channel_id: string;
+  channel_name: string;
+  website_origin: string;
+  authorization_url: string;
+  frontend_url: string;
+  backend_url: string;
+  public_key: string;
+  token: string;
+  expires_at: string;
+  protocol: "omniflow-pairing-v1";
+}
+
+export interface WebChatInstallation {
+  channel_id: string;
+  website_url: string | null;
+  installation_status: "not_connected" | "awaiting_approval" | "expired" | "authorized" | "active" | "disconnected";
+  paired_at: string | null;
+  last_visitor_message_at: string | null;
+  last_agent_message_at: string | null;
+  pairing_id: string | null;
+  expires_at: string | null;
+}
+
+export function setupWebChat(input: { name: string; website_url: string }, channelId?: string) {
+  return request<ChannelConnection>(channelId ? `/${channelId}/web-chat/website` : "/web-chat/setup", {
+    method: channelId ? "PATCH" : "POST", body: input,
+  });
+}
+
+export function startWebChatPairing(channelId: string) {
+  return request<WebChatPairing>(`/${channelId}/web-chat/pairing`, {
+    method: "POST", body: { opener_origin: window.location.origin },
+  });
+}
+
+export function getWebChatInstallation(channelId: string) {
+  return request<WebChatInstallation>(`/${channelId}/web-chat/installation`);
+}
+
+export function cancelWebChatPairing(channelId: string, pairingId: string) {
+  return request<WebChatInstallation>(`/${channelId}/web-chat/pairing/cancel`, { method: "POST", body: { pairing_id: pairingId } });
+}
+
 function redirectToLogin() {
   if (typeof window === "undefined") return;
   const destination = `${window.location.pathname}${window.location.search}`;

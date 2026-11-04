@@ -2,6 +2,8 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { ArrowRightIcon, ArrowsClockwiseIcon, FunnelIcon, LightningIcon, MagnifyingGlassIcon, PlusIcon, SparkleIcon, XIcon } from "@phosphor-icons/react";
+import { AppDialog } from "@/components/app-dialog";
 import { useRouter } from "next/navigation";
 import { useCreditBalance } from "@/lib/credits/use-credit-balance";
 import { AiTemplateModal, AI_TEMPLATE_DRAFT_KEY } from "@/components/templates/ai-template-modal";
@@ -9,6 +11,7 @@ import { PlatformTemplateLibrary } from "@/components/templates/platform-templat
 
 import {
   TemplateApiError,
+  TEMPLATE_PAGE_SIZE,
   getTemplate,
   listTemplates,
   syncTemplates,
@@ -18,7 +21,7 @@ import {
 } from "@/lib/templates/browser";
 import { listChannels, type ChannelConnection } from "@/lib/channels/browser";
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = TEMPLATE_PAGE_SIZE;
 const STATUS_OPTIONS = ["draft", "submitted", "pending", "approved", "rejected", "paused", "disabled", "failed"] as const;
 const CATEGORY_OPTIONS = ["marketing", "utility", "authentication"] as const;
 const PLACEHOLDER_RE = /\{\{\s*([a-z0-9_]+)\s*\}\}/gi;
@@ -89,6 +92,14 @@ export function TemplatesClient() {
   const router = useRouter();
   const creditBalance = useCreditBalance();
   const [aiOpen, setAiOpen] = useState(false);
+  const [view, setView] = useState<"library" | "mine">("library");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [libraryFiltersOpen, setLibraryFiltersOpen] = useState(true);
+  const [librarySearch, setLibrarySearch] = useState("");
+  const [libraryRefresh, setLibraryRefresh] = useState(0);
+  const [deleteTarget, setDeleteTarget] = useState<MessageTemplate | null>(null);
+  const loadRequest = useRef(0);
+  const detailRequest = useRef(0);
 
   function useAiDraft(draft: AiTemplateDraft) {
     try {
@@ -122,16 +133,17 @@ export function TemplatesClient() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function handleDelete(template: MessageTemplate) {
-    if (!window.confirm(`Are you sure you want to delete template "${template.name}"? This action cannot be undone.`)) {
-      return;
-    }
+    if (deletingId) return;
     setDeletingId(template.id);
     setNotice(null);
     try {
       await deleteTemplate(template.id);
       setTemplates((prev) => prev.filter((t) => t.id !== template.id));
       setTotal((prev) => Math.max(0, prev - 1));
+      setDeleteTarget(null);
+      if (templates.length === 1 && page > 1) setPage((current) => current - 1);
       if (detail?.id === template.id) {
+        detailRequest.current += 1;
         setDetail(null);
       }
       setNotice({ kind: "success", text: `Template "${template.name}" deleted successfully.` });
@@ -156,6 +168,7 @@ export function TemplatesClient() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const load = useCallback(async () => {
+    const request = ++loadRequest.current;
     setLoading(true);
     setLoadError(false);
     try {
@@ -167,17 +180,19 @@ export function TemplatesClient() {
         language: language || undefined,
         search: search || undefined,
       });
+      if (request !== loadRequest.current) return;
       setTemplates(result.items);
       setTotal(result.total);
     } catch (error) {
-      if (!(error instanceof TemplateApiError && error.status === 401)) setLoadError(true);
+      if (request === loadRequest.current && !(error instanceof TemplateApiError && error.status === 401)) setLoadError(true);
     } finally {
-      setLoading(false);
+      if (request === loadRequest.current) setLoading(false);
     }
   }, [page, channelId, status, category, language, search]);
 
   useEffect(() => {
     void Promise.resolve().then(() => load());
+    return () => { loadRequest.current += 1; };
   }, [load]);
 
   useEffect(() => {
@@ -210,10 +225,11 @@ export function TemplatesClient() {
   }
 
   async function openDetail(template: MessageTemplate) {
+    const request = ++detailRequest.current;
     setDetail(template);
     try {
       const fresh = await getTemplate(template.id);
-      setDetail(fresh);
+      if (request === detailRequest.current) setDetail(fresh);
     } catch {
       // Keep the list row's copy if the detail fetch fails.
     }
@@ -242,122 +258,42 @@ export function TemplatesClient() {
   const rangeLabel = total === 0 ? "No templates" : `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, total)} of ${total}`;
 
   return (
-    <div className="bg-[#f8f9fa] min-h-screen text-slate-800 font-sans pb-10">
-      {/* Top Header */}
-      <div className="bg-white border-b border-slate-200">
-        <div className="px-6 py-4 flex items-center justify-between mx-auto max-w-7xl">
-          <div>
-            <h1 className="text-[26px] font-bold text-slate-900 leading-tight">Message Templates</h1>
-            <p className="text-[15px] text-slate-500 mt-0.5">Create, manage and monitor your WhatsApp message templates</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 bg-[#e8f5e9] text-[#2e7d32] px-4 py-2 rounded-full font-semibold text-sm border border-[#c8e6c9]">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
-              <span>{creditBalance === null ? "…" : creditBalance.toFixed(2)} AI Credits</span>
-            </div>
-            <button className="p-2.5 bg-white border border-slate-200 rounded-md text-slate-500 hover:bg-slate-50 shadow-sm">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg>
-            </button>
-          </div>
+    <section className="templates-page" aria-label="Message templates">
+      <header className="templates-page-header">
+        <h1>Templates</h1>
+        <div className="templates-header-actions">
+          <Link href="/ai-credits" className="templates-credit" title="AI credit balance"><LightningIcon size={16} aria-hidden="true" /><span>{creditBalance === null ? "..." : creditBalance.toFixed(2)} credits</span></Link>
+        </div>
+      </header>
+      {notice && !deleteTarget && <div className={`templates-notice templates-notice-${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}><span>{notice.text}</span><button type="button" aria-label="Dismiss notification" onClick={() => setNotice(null)}><XIcon size={17} aria-hidden="true" /></button></div>}
+      <div className="templates-top-toolbar">
+        <div className="templates-search"><MagnifyingGlassIcon size={18} aria-hidden="true" /><input type="search" aria-label={view === "library" ? "Search template library" : "Search my templates"} value={view === "library" ? librarySearch : searchInput} maxLength={100} onChange={(event) => { if (view === "library") setLibrarySearch(event.target.value); else setSearchInput(event.target.value); }} placeholder="Search templates" />{(view === "library" ? librarySearch : searchInput) && <button type="button" aria-label={view === "library" ? "Clear library search" : "Clear template search"} onClick={() => { if (view === "library") setLibrarySearch(""); else { setSearchInput(""); setSearch(""); setPage(1); } }}><XIcon size={16} aria-hidden="true" /></button>}</div>
+        <div className="templates-list-actions">
+          <button type="button" className="templates-btn templates-icon-btn" aria-label="Refresh templates" disabled={loading} onClick={() => { void load(); setLibraryRefresh((value) => value + 1); }}><ArrowsClockwiseIcon size={18} aria-hidden="true" /></button>
+          <button type="button" className="templates-btn" onClick={() => { setSyncChannel(connectedWhatsApp[0]?.id ?? ""); setSyncOpen(true); }}>Sync from Meta</button>
+          <button type="button" className="templates-btn" aria-expanded={view === "library" ? libraryFiltersOpen : filtersOpen} aria-controls={view === "library" ? "library-filters" : "template-filters"} onClick={() => { if (view === "library") setLibraryFiltersOpen((open) => !open); else setFiltersOpen((open) => !open); }}><FunnelIcon size={17} aria-hidden="true" />Filters</button>
+          <button type="button" className="templates-btn templates-btn-ai" onClick={() => setAiOpen(true)}><SparkleIcon size={17} aria-hidden="true" />Create with AI</button>
+          <Link href="/templates/new" className="templates-btn templates-btn-primary"><PlusIcon size={17} aria-hidden="true" />Create new template</Link>
         </div>
       </div>
-
-      <div className="p-6 mx-auto max-w-7xl">
-        {notice && (
-          <div className={`p-4 rounded-lg mb-6 text-sm font-semibold flex justify-between ${notice.kind === 'success' ? 'bg-[#e8f5e9] text-[#2e7d32]' : 'bg-rose-50 text-rose-700'}`}>
-            <span>{notice.text}</span>
-            <button type="button" onClick={() => setNotice(null)}>×</button>
-          </div>
-        )}
-
-        <PlatformTemplateLibrary />
-        
-        {/* Actions Row */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="relative w-80">
-            <svg className="w-5 h-5 absolute left-3 top-2.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-            <input 
-              type="search" 
-              value={searchInput} 
-              onChange={(e) => setSearchInput(e.target.value)} 
-              placeholder="Search templates..." 
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-[#00b050] focus:ring-1 focus:ring-[#00b050]"
-            />
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button 
-              type="button"
-              onClick={() => void load()} 
-              disabled={loading}
-              title="Refresh templates"
-              aria-label="Refresh templates"
-              className="p-2.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 shadow-sm cursor-pointer disabled:opacity-50"
-            >
-              <svg className={`w-5 h-5 ${loading ? "animate-spin text-[#00b050]" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-            </button>
-            <button 
-              type="button"
-              onClick={() => { setSyncChannel(connectedWhatsApp[0]?.id ?? ""); setSyncOpen(true); }} 
-              title="Sync from WhatsApp Meta"
-              className="flex items-center gap-1.5 px-3 py-2.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700 font-semibold text-sm shadow-sm cursor-pointer"
-            >
-              <span>Sync from Meta</span>
-            </button>
-            <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-lg font-bold text-sm text-slate-700 hover:bg-slate-50 shadow-sm">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg> Filter
-            </button>
-            <button onClick={() => setAiOpen(true)} className="flex items-center gap-2 px-4 py-2.5 bg-purple-50 border border-purple-100 rounded-lg font-bold text-sm text-purple-700 hover:bg-purple-100 shadow-sm">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg> Create with AI
-            </button>
-            <Link href="/templates/new" className="flex items-center gap-2 px-4 py-2.5 bg-[#00b050] hover:bg-[#009040] text-white rounded-lg font-bold text-sm shadow-sm">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg> Create New Template
-            </Link>
-          </div>
+      <div className="templates-create-options">
+        <button type="button" onClick={() => setAiOpen(true)}><span className="templates-create-icon"><SparkleIcon size={23} aria-hidden="true" /></span><strong>Create with AI</strong><ArrowRightIcon size={18} aria-hidden="true" /></button>
+        <Link href="/templates/new"><span className="templates-create-icon"><PlusIcon size={23} aria-hidden="true" /></span><strong>Create new template</strong><ArrowRightIcon size={18} aria-hidden="true" /></Link>
+      </div>
+      <div className="templates-view-tabs" role="group" aria-label="Template view">
+        <button type="button" aria-pressed={view === "library"} onClick={() => setView("library")}>Template library</button>
+        <button type="button" aria-pressed={view === "mine"} onClick={() => setView("mine")}>My templates<span>{loading ? "..." : total}</span></button>
+      </div>
+      <div hidden={view !== "library"}><PlatformTemplateLibrary searchQuery={librarySearch} onSearchChange={setLibrarySearch} filtersOpen={libraryFiltersOpen} refreshKey={libraryRefresh} /></div>
+      <div className="templates-mine" hidden={view !== "mine"}>
+        <div className="templates-filter-panel" id="template-filters" hidden={!filtersOpen}>
+          <label>Channel<select value={channelId} onChange={(event) => changeFilter(setChannelId, event.target.value)}><option value="">All channels</option>{whatsappChannels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name}</option>)}</select></label>
+          <label>Status<select value={status} onChange={(event) => changeFilter(setStatus, event.target.value)}><option value="">All statuses</option>{STATUS_OPTIONS.map((item) => <option key={item} value={item}>{titleCase(item)}</option>)}</select></label>
+          <label>Category<select value={category} onChange={(event) => changeFilter(setCategory, event.target.value)}><option value="">All categories</option>{CATEGORY_OPTIONS.map((item) => <option key={item} value={item}>{titleCase(item)}</option>)}</select></label>
+          <label>Language<input value={language} onChange={(event) => changeFilter(setLanguage, event.target.value.trim())} placeholder="en_US" maxLength={12} /></label>
+          {hasActiveFilters && <button type="button" className="templates-btn" onClick={() => { setSearchInput(""); setSearch(""); setChannelId(""); setStatus(""); setCategory(""); setLanguage(""); setPage(1); }}>Clear filters</button>}
         </div>
-
-        {/* Big Cards */}
-        <div className="grid grid-cols-2 gap-6 mb-10">
-          <button onClick={() => setAiOpen(true)} className="flex flex-col items-center justify-center py-12 px-6 bg-white border-2 border-dashed border-purple-200 rounded-2xl hover:border-purple-400 hover:bg-purple-50/30 transition-all text-center">
-            <div className="w-14 h-14 bg-[#aa42d4] rounded-full flex items-center justify-center text-white mb-4 shadow-sm">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
-            </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-1">Create with AI</h3>
-            <p className="text-sm text-slate-500">generate 10 templates, pick one to edit &rarr;</p>
-          </button>
-
-          <Link href="/templates/new" className="flex flex-col items-center justify-center py-12 px-6 bg-white border-2 border-dashed border-slate-200 rounded-2xl hover:border-[#00b050] hover:bg-emerald-50/30 transition-all text-center">
-            <div className="w-14 h-14 bg-[#00b050] rounded-full flex items-center justify-center text-white mb-4 shadow-sm">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-            </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-1">Create new template</h3>
-            <p className="text-sm text-slate-500">or start from our library &rarr;</p>
-          </Link>
-        </div>
-
-        <AiTemplateModal open={aiOpen} onClose={() => setAiOpen(false)} onUse={useAiDraft} />
-
-        {/* Existing filters for table */}
-        {(hasActiveFilters || templates.length > 0) && (
-          <div className="flex gap-4 mb-6">
-            <select className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none shadow-sm" aria-label="Channel" value={channelId} onChange={(e) => changeFilter(setChannelId, e.target.value)}>
-              <option value="">All channels</option>
-              {whatsappChannels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-            <select className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none shadow-sm" aria-label="Status" value={status} onChange={(e) => changeFilter(setStatus, e.target.value)}>
-              <option value="">All statuses</option>
-              {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{titleCase(s)}</option>)}
-            </select>
-            <select className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none shadow-sm" aria-label="Category" value={category} onChange={(e) => changeFilter(setCategory, e.target.value)}>
-              <option value="">All categories</option>
-              {CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{titleCase(c)}</option>)}
-            </select>
-            <input className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none shadow-sm" aria-label="Language" value={language} onChange={(e) => changeFilter(setLanguage, e.target.value.trim())} placeholder="Language (e.g. en_US)" maxLength={12} />
-          </div>
-        )}
-
-        <div className="mb-4 text-sm font-semibold text-slate-500" aria-live="polite">{rangeLabel}</div>
-
+        <p className="templates-range" aria-live="polite">{rangeLabel}</p>
       {loading ? (
         <div className="channel-state" role="status">Loading templates…</div>
       ) : loadError ? (
@@ -424,7 +360,7 @@ export function TemplatesClient() {
                     <button
                       type="button"
                       disabled={deletingId === template.id}
-                      onClick={() => void handleDelete(template)}
+                      onClick={() => setDeleteTarget(template)}
                       className="px-2 py-1 bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 text-xs font-semibold rounded-md shadow-2xs disabled:opacity-50"
                       title="Delete Template"
                     >
@@ -444,12 +380,13 @@ export function TemplatesClient() {
         </>
       )}
 
+      </div>
       {/* Preview modal */}
-      {detail && <TemplatePreview template={detail} channelName={channelsById.get(detail.channel_connection_id)?.name ?? null} onClose={() => setDetail(null)} />}
+      {detail && <TemplatePreview template={detail} channelName={channelsById.get(detail.channel_connection_id)?.name ?? null} onClose={() => { detailRequest.current += 1; setDetail(null); }} />}
 
       {/* Sync modal */}
       {syncOpen && (
-        <div className="channel-modal-scrim" role="dialog" aria-modal="true" aria-labelledby="sync-title">
+        <AppDialog labelledBy="sync-title" onClose={() => setSyncOpen(false)} busy={syncing}>
           <div className="channel-modal channel-modal-sm">
             <h2 id="sync-title">Sync WhatsApp templates</h2>
             <p className="channel-modal-sub">Fetch the latest approved templates from Meta for a connected channel.</p>
@@ -468,10 +405,21 @@ export function TemplatesClient() {
               <button type="button" className="channel-primary-btn" onClick={() => void runSync()} disabled={syncing || !syncChannel}>{syncing ? "Syncing…" : "Sync now"}</button>
             </div>
           </div>
-        </div>
+        </AppDialog>
       )}
-      </div>
-    </div>
+      {deleteTarget && <AppDialog labelledBy="delete-template-title" onClose={() => setDeleteTarget(null)} busy={Boolean(deletingId)}>
+        <div className="channel-modal channel-modal-sm">
+          <h2 id="delete-template-title">Delete template?</h2>
+          {notice?.kind === "error" && <p className="channel-form-error" role="alert">{notice.text}</p>}
+          <p className="channel-modal-sub">Delete <strong>{deleteTarget.name}</strong>? This cannot be undone.</p>
+          <div className="channel-modal-actions">
+            <button type="button" className="channel-secondary-btn" autoFocus disabled={Boolean(deletingId)} onClick={() => setDeleteTarget(null)}>Cancel</button>
+            <button type="button" className="templates-btn templates-btn-danger" disabled={Boolean(deletingId)} onClick={() => void handleDelete(deleteTarget)}>{deletingId ? "Deleting..." : "Delete template"}</button>
+          </div>
+        </div>
+      </AppDialog>}
+      <AiTemplateModal open={aiOpen} onClose={() => setAiOpen(false)} onUse={useAiDraft} />
+    </section>
   );
 }
 
@@ -484,7 +432,7 @@ function TemplatePreview({ template, channelName, onClose }: { template: Message
   const footerText = typeof part.footer?.text === "string" ? part.footer.text : null;
 
   return (
-    <div className="channel-modal-scrim" role="dialog" aria-modal="true" aria-labelledby="tpl-title">
+    <AppDialog labelledBy="tpl-title" onClose={onClose}>
       <div className="channel-modal contact-detail-modal">
         <div className="contact-detail-head">
           <div>
@@ -547,9 +495,6 @@ function TemplatePreview({ template, channelName, onClose }: { template: Message
           </div>
         )}
 
-        <p className="tpl-send-note">
-          To send this template, open a conversation with the contact in the Inbox, select it in Broadcast campaigns, or trigger it via Chatbot Flows.
-        </p>
 
         <div className="channel-modal-actions flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -571,6 +516,6 @@ function TemplatePreview({ template, channelName, onClose }: { template: Message
           <button type="button" className="channel-secondary-btn" onClick={onClose}>Close</button>
         </div>
       </div>
-    </div>
+    </AppDialog>
   );
 }

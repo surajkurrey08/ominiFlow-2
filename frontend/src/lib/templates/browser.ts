@@ -8,6 +8,8 @@ import type { MessageTemplate, TemplateSyncResult } from "@/lib/api/templates";
 
 export type { MessageTemplate, TemplateSyncResult };
 
+export const TEMPLATE_PAGE_SIZE = 12;
+
 export interface TemplateFilters {
   page?: number;
   page_size?: number;

@@ -196,6 +196,18 @@ export function buildChannelProxyTarget(
     return null;
   }
 
+  // Website setup has its own strict contract; no provider tokens are accepted.
+  const websiteBody = () => {
+    if (!isRecord(body) || Object.keys(body).some(key => !["name", "website_url"].includes(key))) return null;
+    if (typeof body.name !== "string" || body.name.trim().length < 2 || body.name.trim().length > 150) return null;
+    if (typeof body.website_url !== "string" || body.website_url.length < 8 || body.website_url.length > 2048) return null;
+    return { name: body.name.trim(), website_url: body.website_url.trim() };
+  };
+  if (segments.join("/") === "web-chat/setup" && method === "POST" && params.size === 0) {
+    const setup = websiteBody();
+    return setup ? { backendPath: "/channels/web-chat/setup", method: "POST", query: empty, body: setup } : null;
+  }
+
   const id = segments[0];
 
   // OAuth self-service flow
@@ -236,6 +248,25 @@ export function buildChannelProxyTarget(
   }
 
   if (!UUID_PATTERN.test(id)) return null;
+
+  if (segments[1] === "web-chat" && params.size === 0) {
+    const path = `/channels/${id}/web-chat`;
+    if (segments.length === 3 && segments[2] === "website" && method === "PATCH") {
+      const setup = websiteBody();
+      return setup ? { backendPath: `${path}/website`, method: "PATCH", query: empty, body: setup } : null;
+    }
+    if (segments.length === 3 && segments[2] === "installation" && method === "GET") {
+      return { backendPath: `${path}/installation`, method: "GET", query: empty };
+    }
+    if (segments.length === 3 && segments[2] === "pairing" && method === "POST") {
+      if (!isRecord(body) || Object.keys(body).length !== 1 || typeof body.opener_origin !== "string" || body.opener_origin.length > 2048) return null;
+      return { backendPath: `${path}/pairing`, method: "POST", query: empty, body: { opener_origin: body.opener_origin } };
+    }
+    if (segments.length === 4 && segments[2] === "pairing" && segments[3] === "cancel" && method === "POST") {
+      if (!isRecord(body) || Object.keys(body).length !== 1 || typeof body.pairing_id !== "string" || !UUID_PATTERN.test(body.pairing_id)) return null;
+      return { backendPath: `${path}/pairing/cancel`, method: "POST", query: empty, body: { pairing_id: body.pairing_id } };
+    }
+  }
 
   // Single channel: get / update / delete.
   if (segments.length === 1) {

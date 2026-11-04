@@ -1,4 +1,5 @@
 from app.models.base import Base
+from app.models.web_chat_pairing import WebChatPairing
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.models.role import Role
@@ -65,6 +66,7 @@ from app.models.social_post import SocialPost, SocialPostStatus, SocialPlatform
 
 
 __all__ = [
+    "WebChatPairing",
     "Base",
     "Tenant",
     "User",

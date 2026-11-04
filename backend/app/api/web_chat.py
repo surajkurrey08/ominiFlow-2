@@ -4,10 +4,15 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.dependencies import CurrentTenant, DbSession, require_permission
+from app.api.dependencies import CurrentTenant, CurrentUser, DbSession, require_permission
+from app.schemas.web_chat_pairing import (
+    WebChatSetupRequest, WebChatPairingStart, WebChatPairingComplete, WebChatPairingCancel,
+    WebChatPairingResponse, WebChatInstallationResponse,
+)
+from app.services import web_chat_pairing_service as pairing_service
 from app.schemas.channel import ChannelConnectionResponse
 from app.schemas.web_chat import (
     WebChatConfigResponse,
@@ -34,6 +39,8 @@ router = APIRouter(tags=["Web Chat"])
 def _handle_errors() -> Iterator[None]:
     try:
         yield
+    except pairing_service.PairingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
     except WebChatChannelNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except NotWebChatChannelError as exc:
@@ -49,6 +56,47 @@ def _handle_errors() -> Iterator[None]:
 # =========================
 # DASHBOARD (authenticated)
 # =========================
+
+@router.post("/channels/web-chat/setup", response_model=ChannelConnectionResponse,
+             dependencies=[Depends(require_permission("channel:create"))], status_code=201)
+def setup_web_chat(data: WebChatSetupRequest, tenant: CurrentTenant, user: CurrentUser, db: DbSession):
+    with _handle_errors():
+        return pairing_service.create_website_channel(db, tenant.id, user.id, data)
+
+
+@router.patch("/channels/{channel_id}/web-chat/website", response_model=ChannelConnectionResponse,
+            dependencies=[Depends(require_permission("channel:update"))])
+def save_web_chat_website(channel_id: uuid.UUID, data: WebChatSetupRequest, tenant: CurrentTenant, db: DbSession):
+    with _handle_errors():
+        return pairing_service.save_website(db, tenant.id, channel_id, data)
+
+
+@router.post("/channels/{channel_id}/web-chat/pairing", response_model=WebChatPairingResponse,
+             dependencies=[Depends(require_permission("channel:update"))])
+def start_web_chat_pairing(channel_id: uuid.UUID, data: WebChatPairingStart, tenant: CurrentTenant, user: CurrentUser, db: DbSession, response: Response):
+    with _handle_errors():
+        response.headers["Cache-Control"] = "no-store"
+        return pairing_service.start_pairing(db, tenant.id, user.id, channel_id, data.opener_origin)
+
+
+@router.get("/channels/{channel_id}/web-chat/installation", response_model=WebChatInstallationResponse,
+            dependencies=[Depends(require_permission("channel:read"))])
+def web_chat_installation(channel_id: uuid.UUID, tenant: CurrentTenant, db: DbSession):
+    with _handle_errors():
+        return pairing_service.installation(db, tenant.id, channel_id)
+
+
+@router.post("/channels/{channel_id}/web-chat/pairing/cancel", response_model=WebChatInstallationResponse,
+             dependencies=[Depends(require_permission("channel:update"))])
+def cancel_web_chat_pairing(channel_id: uuid.UUID, data: WebChatPairingCancel, tenant: CurrentTenant, db: DbSession):
+    with _handle_errors():
+        return pairing_service.cancel_pairing(db, tenant.id, channel_id, data.pairing_id)
+
+
+@router.post("/web-chat/pairings/{pairing_id}/complete")
+def complete_web_chat_pairing(pairing_id: uuid.UUID, data: WebChatPairingComplete, db: DbSession):
+    with _handle_errors():
+        return pairing_service.complete_pairing(db, pairing_id, data)
 
 @router.post(
     "/channels/{channel_id}/web-chat/connect",

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, aliased
 from app.models import (
     ACTIVE_CONVERSATION_STATUSES,
     ChannelConnection,
+    ChannelType,
     ChannelStatus,
     Contact,
     Conversation,
@@ -252,6 +253,7 @@ def list_conversations(
     *,
     status: ConversationStatus | None = None,
     channel_id: uuid.UUID | None = None,
+    channel_type: ChannelType | None = None,
     contact_id: uuid.UUID | None = None,
     assigned_user_id: uuid.UUID | None = None,
     unassigned: bool = False,
@@ -265,6 +267,13 @@ def list_conversations(
         filters.append(Conversation.status == status)
     if channel_id is not None:
         filters.append(Conversation.channel_connection_id == channel_id)
+    if channel_type is not None:
+        filters.append(Conversation.channel_connection_id.in_(
+            select(ChannelConnection.id).where(
+                ChannelConnection.tenant_id == tenant_id,
+                ChannelConnection.channel_type == channel_type,
+            )
+        ))
     if contact_id is not None:
         filters.append(Conversation.contact_id == contact_id)
     if assigned_user_id is not None:

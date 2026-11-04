@@ -9,7 +9,7 @@ from app.api.dependencies import (
     require_permission,
 )
 from app.api.errors import service_errors
-from app.models import ConversationStatus
+from app.models import ChannelType, ConversationStatus
 from app.schemas.conversation import (
     ConversationAssign,
     ConversationListResponse,
@@ -77,6 +77,7 @@ def list_conversations(
     page_size: int = Query(default=20, ge=1, le=100),
     conversation_status: ConversationStatus | None = Query(default=None, alias="status"),
     channel_id: uuid.UUID | None = Query(default=None),
+    channel_type: ChannelType | None = Query(default=None),
     contact_id: uuid.UUID | None = Query(default=None),
     assigned_user_id: uuid.UUID | None = Query(default=None),
     unassigned: bool = Query(default=False),
@@ -88,6 +89,7 @@ def list_conversations(
             db, tenant.id, page, page_size,
             status=conversation_status,
             channel_id=channel_id,
+            channel_type=channel_type,
             contact_id=contact_id,
             assigned_user_id=assigned_user_id,
             unassigned=unassigned,

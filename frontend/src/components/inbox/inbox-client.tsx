@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 
 import { InboxApiError, assignInboxConversation, changeInboxConversationMode, changeInboxConversationStatus, getInboxChannelAvailability, getInboxContactDetails, getInboxConversation, getInboxFilterOptions, getInboxTemplates, inboxMediaUrl, listInboxConversations, listInboxMessages, markInboxConversationRead, sendInboxTextMessage, sendInboxTemplateMessage, type InboxChannelOption, type InboxContactDetails, type InboxTemplateOption, type InboxUserOption } from "@/lib/api/inbox";
 import { uploadTemplateMedia } from "@/lib/templates/browser";
@@ -9,23 +9,14 @@ import type { Conversation, ConversationListParams, ConversationStatus } from "@
 import { MAX_TEXT_LENGTH, type Message } from "@/lib/api/messages";
 import { canSendWhatsAppReply, INBOX_STATUSES } from "@/lib/inbox/proxy-utils";
 import { createInboxEventStream, type InboxConnectionState } from "@/lib/realtime/inbox";
+import { InboxIcon, ChannelBadge } from "@/components/inbox/inbox-icons";
+import { useWorkspaceShell } from "@/components/workspace-shell-context";
+import { InboxWorkspaceHeader, type InboxCounts, type InboxMetric } from "@/components/inbox/inbox-workspace-header";
+import { InboxContactPanel, type ContactPanelTab } from "@/components/inbox/inbox-contact-panel";
+import type { ChannelType } from "@/lib/api/channels";
 
 const PAGE_SIZE = 25;
 const MESSAGE_PAGE_SIZE = 100;
-
-function InboxIcon({ name }: { name: "search" | "filter" | "refresh" | "info" | "close" | "back" | "send" | "template" }) {
-  const paths = {
-    search: <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></>,
-    filter: <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="2" /><circle cx="15" cy="17" r="2" /></>,
-    refresh: <><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6.1 7a7 7 0 0 1 11.5-2L20 8M4 16l2.4 3A7 7 0 0 0 18 17" /></>,
-    info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7v.01" /></>,
-    close: <path d="m6 6 12 12M6 18 18 6" />,
-    back: <path d="m12 5-7 7 7 7M5 12h15" />,
-    send: <><path d="m21 3-6.5 18-4-7.5L3 9.5 21 3Z" /><path d="m10.5 13.5 5-5" /></>,
-    template: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
-  };
-  return <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
-}
 
 function contactInitial(name: string | null | undefined) {
   return name?.match(/[\p{L}\p{N}]/u)?.[0].toUpperCase() || "?";
@@ -53,6 +44,29 @@ function fullTime(value: string) {
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleString([], {
     month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit",
   });
+}
+
+function messageDay(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toDateString();
+}
+
+function messageDayLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) return "Today";
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return date.toLocaleDateString([], {
+    month: "short", day: "numeric", ...(date.getFullYear() !== today.getFullYear() ? { year: "numeric" } : {}),
+  });
+}
+
+function messageTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 function conversationPreview(conversation: Conversation) {
@@ -93,12 +107,15 @@ function supportsInboxTemplate(template: InboxTemplateOption) {
 }
 
 export function InboxClient({ initialConversationId }: InboxClientProps) {
+  const shell = useWorkspaceShell();
+  const setShellInboxTotal = shell?.setInboxTotal;
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<ConversationStatus | "all">("all");
   const [unreadFilter, setUnreadFilter] = useState<"all" | "unread" | "read">("all");
   const [channelFilter, setChannelFilter] = useState("");
+  const [channelTypeFilter, setChannelTypeFilter] = useState<ChannelType | "">("");
   const [assigneeFilter, setAssigneeFilter] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
@@ -134,7 +151,14 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
   const [templateHeaderValues, setTemplateHeaderValues] = useState<string[]>([]);
   const [templateMediaFile, setTemplateMediaFile] = useState<File | null>(null);
   const [templateBusy, setTemplateBusy] = useState(false);
-  const [showContactDetails, setShowContactDetails] = useState(false);
+  const [showContactDetails, setShowContactDetails] = useState(true);
+  const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
+  const [panelTab, setPanelTab] = useState<ContactPanelTab>("details");
+  const [openTagPicker, setOpenTagPicker] = useState(false);
+  const [pinnedConversations, setPinnedConversations] = useState<Set<string>>(new Set());
+  const [composerTool, setComposerTool] = useState<"emoji" | "quick" | "variables" | "add" | null>(null);
+  const [counts, setCounts] = useState<InboxCounts>({ all: null, unassigned: null, pending: null, resolved: null, unread: null });
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const detailsToggleRef = useRef<HTMLButtonElement>(null);
 
@@ -147,7 +171,36 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
   const loadConversationsRef = useRef<(showLoading?: boolean) => Promise<void>>(async () => {});
   const refreshThreadRef = useRef<(conversationId: string) => Promise<void>>(async () => {});
   const threadRef = useRef<HTMLDivElement>(null);
+  const messageContentRef = useRef<HTMLDivElement>(null);
+  const atLatestRef = useRef(true);
+  const [awayFromLatest, setAwayFromLatest] = useState(false);
   const scrollMode = useRef<"bottom" | number | null>(null);
+  const summaryRequestId = useRef(0);
+  const refreshSummaryRef = useRef<() => Promise<void>>(async () => {});
+
+  const refreshSummary = useCallback(async () => {
+    const request = ++summaryRequestId.current;
+    const filters = [{}, { unassigned: true }, { status: "pending" as const }, { status: "resolved" as const }, { unread: true }];
+    const results = await Promise.allSettled(filters.map((filter) => listInboxConversations({ page: 1, page_size: 1, ...filter })));
+    if (request !== summaryRequestId.current) return;
+    const keys: InboxMetric[] = ["all", "unassigned", "pending", "resolved", "unread"];
+    setCounts(Object.fromEntries(keys.map((key, index) => [key, results[index].status === "fulfilled" ? (results[index] as PromiseFulfilledResult<Awaited<ReturnType<typeof listInboxConversations>>>).value.total : null])) as InboxCounts);
+    if (results[0].status === "fulfilled") setShellInboxTotal?.(results[0].value.total);
+  }, [setShellInboxTotal]);
+
+  useEffect(() => {
+    refreshSummaryRef.current = refreshSummary;
+    void refreshSummary();
+    return () => { summaryRequestId.current += 1; };
+  }, [refreshSummary]);
+
+  const updateScrollPosition = useCallback(() => {
+    const element = threadRef.current;
+    if (!element) return;
+    const atLatest = element.scrollHeight - element.scrollTop - element.clientHeight < 100;
+    atLatestRef.current = atLatest;
+    setAwayFromLatest(!atLatest);
+  }, []);
 
   useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
   useEffect(() => { selectedConversationRef.current = selectedConversation; }, [selectedConversation]);
@@ -169,6 +222,7 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
       ...(statusFilter !== "all" ? { status: statusFilter } : {}),
       ...(unreadFilter !== "all" ? { unread: unreadFilter === "unread" } : {}),
       ...(channelFilter ? { channel_id: channelFilter } : {}),
+      ...(channelTypeFilter ? { channel_type: channelTypeFilter } : {}),
       ...(assigneeFilter === "unassigned" ? { unassigned: true } : assigneeFilter ? { assigned_user_id: assigneeFilter } : {}),
       ...(appliedSearch ? { search: appliedSearch } : {}),
     };
@@ -201,7 +255,7 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
     } finally {
       if (requestId === listRequestId.current) setListLoading(false);
     }
-  }, [page, statusFilter, unreadFilter, channelFilter, assigneeFilter, appliedSearch, updateUrl]);
+  }, [page, statusFilter, unreadFilter, channelFilter, channelTypeFilter, assigneeFilter, appliedSearch, updateUrl]);
 
   useEffect(() => { loadConversationsRef.current = loadConversations; }, [loadConversations]);
 
@@ -260,7 +314,23 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
     if (mode === "bottom") element.scrollTop = element.scrollHeight;
     else element.scrollTop += element.scrollHeight - mode;
     scrollMode.current = null;
-  }, [messages]);
+    updateScrollPosition();
+  }, [messages, updateScrollPosition]);
+
+  useEffect(() => {
+    const history = threadRef.current;
+    const content = messageContentRef.current;
+    if (!history || !content) return;
+    const observer = new ResizeObserver(() => {
+      // Keep the latest reply in view when media loads or the composer grows.
+      // Reading older messages must retain the reader's scroll position.
+      if (atLatestRef.current) history.scrollTop = history.scrollHeight;
+      updateScrollPosition();
+    });
+    observer.observe(history);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [selectedConversation?.id, updateScrollPosition]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -300,6 +370,7 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
       if (historyRequestId === messageRequestId.current) {
         if (historyResult.status === "fulfilled") {
           const chronological = [...historyResult.value.items].reverse();
+          atLatestRef.current = true;
           scrollMode.current = "bottom";
           setMessages(chronological);
           setMessageTotal(historyResult.value.total);
@@ -367,6 +438,7 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
         setLiveState(state);
         if (state === "connected") {
           void loadConversationsRef.current(false);
+          void refreshSummaryRef.current();
           const currentId = selectedIdRef.current;
           if (currentId) void refreshThreadRef.current(currentId);
         }
@@ -385,6 +457,7 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => {
         void loadConversationsRef.current(false);
+        void refreshSummaryRef.current();
         const currentId = selectedIdRef.current;
         if (currentId && event.conversation_id === currentId) {
           void refreshThreadRef.current(currentId);
@@ -400,6 +473,10 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
   }, []);
 
   const selectConversation = useCallback((conversation: Conversation) => {
+    if (selectedIdRef.current === conversation.id) {
+      setMobileThread(true);
+      return;
+    }
     setSelectedId(conversation.id);
     selectedIdRef.current = conversation.id;
     setSelectedConversation(conversation);
@@ -414,6 +491,8 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
     setDraft("");
     setSendError("");
     setUncertainSend(false);
+    setMobileInspectorOpen(false);
+    setComposerTool(null);
     updateUrl(conversation.id);
   }, [updateUrl]);
 
@@ -444,9 +523,10 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
   }
 
   async function updateConversation(updated: Conversation) {
-    setSelectedConversation(updated);
+    setSelectedConversation((current) => current?.id === updated.id ? updated : current);
     setConversations((current) => current.map((item) => item.id === updated.id ? updated : item));
     await loadConversations(false);
+    void refreshSummary();
   }
 
   async function handleModeChange(mode: "chatbot" | "human") {
@@ -549,12 +629,36 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
     : "Select a conversation to reply.";
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const canLoadEarlier = messages.length < messageTotal;
-  const liveLabel = liveState === "connected"
-    ? "Live"
-    : liveState === "connecting" || liveState === "reconnecting"
-      ? "Connecting"
-      : "Offline";
   const activeFilterCount = [statusFilter !== "all", unreadFilter !== "all", Boolean(channelFilter), Boolean(assigneeFilter)].filter(Boolean).length;
+  const activeMetric: InboxMetric | null = unreadFilter === "unread" ? "unread" : assigneeFilter === "unassigned" ? "unassigned" : statusFilter === "pending" ? "pending" : statusFilter === "resolved" ? "resolved" : statusFilter === "all" && !assigneeFilter ? "all" : null;
+
+  function selectMetric(metric: InboxMetric) {
+    setStatusFilter(metric === "pending" || metric === "resolved" ? metric : "all");
+    setAssigneeFilter(metric === "unassigned" ? "unassigned" : "");
+    setUnreadFilter(metric === "unread" ? "unread" : "all");
+    setPage(1);
+  }
+
+  function refreshInbox() {
+    void loadConversations(true);
+    void refreshSummary();
+    if (selectedIdRef.current) void refreshThread(selectedIdRef.current);
+  }
+
+  function revealContact(tab: ContactPanelTab = "details", tags = false) {
+    setPanelTab(tab); setShowContactDetails(true); setMobileInspectorOpen(true);
+    if (tags) setOpenTagPicker(true);
+  }
+
+  function insertDraft(value: string) {
+    const input = composerRef.current;
+    const start = input?.selectionStart ?? draft.length;
+    const end = input?.selectionEnd ?? draft.length;
+    const next = draft.slice(0, start) + value + draft.slice(end);
+    if (next.length > MAX_TEXT_LENGTH) { setSendError(`Replies can contain up to ${MAX_TEXT_LENGTH} characters.`); return; }
+    setDraft(next); setComposerTool(null);
+    requestAnimationFrame(() => { input?.focus(); input?.setSelectionRange(start + value.length, start + value.length); });
+  }
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -568,29 +672,18 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
   }
 
   return (
-    <section className="inbox-page page-enter" aria-label="WhatsApp inbox">
-      <div className="inbox-heading">
-        <h1>Inbox</h1>
-        <div className="inbox-heading-actions">
-          <span className={`live-indicator ${liveState === "connected" ? "live-indicator-on" : ""}`} role="status" title={liveState === "connected" ? "Live updates connected" : "Live updates are reconnecting"}>
-            <span aria-hidden="true" />{liveLabel}
-          </span>
-          <button type="button" className="refresh-button" disabled={listLoading} onClick={() => {
-            void loadConversations(true);
-            if (selectedIdRef.current) void refreshThread(selectedIdRef.current);
-          }} aria-label="Refresh conversations and messages" title="Refresh inbox">
-            <span className={listLoading ? "animate-spin" : ""}><InboxIcon name="refresh" /></span>
-          </button>
-        </div>
-      </div>
+    <section className="inbox-page page-enter" aria-label="Inbox">
+      <InboxWorkspaceHeader counts={counts} metric={activeMetric} onSelect={selectMetric} liveState={liveState} refreshing={listLoading} onRefresh={refreshInbox} />
 
       {liveMessage && <p role="status" className="inbox-live-warning">{liveMessage}</p>}
 
-      <div className={`inbox-layout ${showContactDetails ? "inbox-details-open" : ""} ${mobileThread ? "inbox-has-selection" : ""}`}>
+      <div className={`inbox-layout ${showContactDetails && selectedConversation ? "inbox-details-open" : ""} ${mobileInspectorOpen ? "inbox-details-mobile-open" : ""} ${mobileThread ? "inbox-has-selection" : ""}`}>
         <aside className={`conversation-pane min-h-0 flex-col border-r border-slate-200 ${mobileThread ? "hidden md:flex" : "flex"}`} aria-label="Conversation list">
           <div className="conversation-pane-header">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="conversation-heading">Conversations <span>{total.toLocaleString()}</span></h2>
+            <div className="inbox-channel-tabs" role="group" aria-label="Filter by channel">
+              <button type="button" className="channel-tab-all" aria-pressed={!channelTypeFilter} onClick={() => { setChannelTypeFilter(""); setChannelFilter(""); setPage(1); }}>All</button>
+              {([ ["whatsapp", "WhatsApp"], ["instagram", "Instagram"], ["email", "Email"], ["facebook", "Messenger"] ] as const).map(([type, label]) => <button type="button" key={type} aria-label={`${label} conversations`} aria-pressed={channelTypeFilter === type} disabled={type === "email"} title={type === "email" ? "Email integration is not available" : `${label} conversations`} onClick={() => { if (type === "email") return; setChannelTypeFilter(type); setChannelFilter(""); setPage(1); }}><ChannelBadge type={type} size={23} /></button>)}
+              <button type="button" className="channel-tab-filter" aria-label="Show conversation filters" title="Conversation filters" onClick={() => { const filter = document.getElementById("inbox-filters") as HTMLDetailsElement | null; if (filter) filter.open = !filter.open; }}><InboxIcon name="filter" />{activeFilterCount > 0 && <span>{activeFilterCount}</span>}</button>
             </div>
 
             <form className="inbox-search" onSubmit={submitSearch} role="search" noValidate>
@@ -600,7 +693,7 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
               {searchInput && <button type="button" onClick={() => { setSearchInput(""); setAppliedSearch(""); setPage(1); searchRef.current?.focus(); }} aria-label="Clear search"><InboxIcon name="close" /></button>}
             </form>
 
-            <details className="inbox-filters">
+            <details className="inbox-filters" id="inbox-filters">
               <summary><InboxIcon name="filter" /><span>Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}</span><span className="filter-chevron" aria-hidden="true">⌄</span></summary>
               <div className="inbox-filter-grid">
               <label>
@@ -648,15 +741,15 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
               <span className="empty-state-mark">◎</span>
               <p className="mt-3 text-sm font-semibold text-slate-800">No conversations here yet</p>
               <p className="mt-1 max-w-52 text-xs leading-5 text-slate-500">New customer conversations will appear here when they arrive.</p>
-              {(appliedSearch || statusFilter !== "all" || unreadFilter !== "all" || channelFilter || assigneeFilter) && (
+              {(appliedSearch || statusFilter !== "all" || unreadFilter !== "all" || channelFilter || channelTypeFilter || assigneeFilter) && (
                 <button className="text-action mt-3" type="button" onClick={() => {
-                  setAppliedSearch(""); setSearchInput(""); setStatusFilter("all"); setUnreadFilter("all"); setChannelFilter(""); setAssigneeFilter(""); setPage(1);
+                  setAppliedSearch(""); setSearchInput(""); setStatusFilter("all"); setUnreadFilter("all"); setChannelFilter(""); setChannelTypeFilter(""); setAssigneeFilter(""); setPage(1);
                 }}>Clear filters</button>
               )}
             </div>
           ) : (
             <div className="conversation-list" aria-label="Conversations">
-              {conversations.map((conversation) => (
+              {[...conversations].sort((a, b) => Number(pinnedConversations.has(b.id)) - Number(pinnedConversations.has(a.id))).map((conversation) => (
                 <button
                   type="button"
                   key={conversation.id}
@@ -667,16 +760,12 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
                   <span className="contact-avatar" aria-hidden="true">{contactInitial(conversation.contact.name)}</span>
                   <span className="conversation-row-content">
                     <span className="conversation-row-top">
-                      <span className="conversation-contact">{conversation.contact.name || "Unknown contact"}</span>
+                      <span className="conversation-contact"><ChannelBadge type={conversation.channel.channel_type} /><span>{conversation.contact.name || "Unknown contact"}</span>{pinnedConversations.has(conversation.id) && <InboxIcon name="star" filled />}</span>
                       <time className="conversation-time" dateTime={conversation.last_message_at ?? conversation.updated_at}>{shortTime(conversation.last_message_at ?? conversation.updated_at)}</time>
                     </span>
                     <span className="conversation-row-bottom">
                       <span className="conversation-preview">{conversationPreview(conversation)}</span>
                       {conversation.unread_count > 0 && <span className="unread-count" aria-label={`${conversation.unread_count} unread messages`}>{conversation.unread_count > 99 ? "99+" : conversation.unread_count}</span>}
-                    </span>
-                    <span className="conversation-row-details">
-                      <span className="conversation-channel">{conversation.channel.name}{conversation.assigned_user ? ` · ${conversation.assigned_user.first_name}` : ""}</span>
-                      <span className="conversation-mode" title={conversation.mode === "human" ? "Human replies" : "Chatbot replies"}>{conversation.mode === "human" ? "Human" : "Bot"}</span>
                     </span>
                   </span>
                 </button>
@@ -701,15 +790,21 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
                 <span className="contact-avatar contact-avatar-thread" aria-hidden="true">{contactInitial(selectedConversation.contact.name)}</span>
                 <div className="thread-contact">
                   <h2>{selectedConversation.contact.name || "Unknown contact"}</h2>
-                  <p>{selectedConversation.contact.phone_number || "Phone unavailable"}<span aria-hidden="true"> · </span>{selectedConversation.channel.name}</p>
+                  <p><ChannelBadge type={selectedConversation.channel.channel_type} />{selectedConversation.contact.phone_number || selectedConversation.channel.name}</p>
                 </div>
-                <button ref={detailsToggleRef} type="button" className={`inbox-icon-button ${showContactDetails ? "inbox-icon-button-active" : ""}`} onClick={() => setShowContactDetails((open) => !open)} aria-label="Contact details" aria-expanded={showContactDetails} aria-controls="inbox-contact-details" title="Contact details"><InboxIcon name="info" /></button>
+                <div className="thread-header-actions">
+                  <button type="button" className="inbox-icon-button thread-pin" aria-label="Pin conversation in this view" aria-pressed={pinnedConversations.has(selectedConversation.id)} title="Pin conversation in this view" onClick={() => setPinnedConversations((current) => { const next = new Set(current); if (next.has(selectedConversation.id)) next.delete(selectedConversation.id); else next.add(selectedConversation.id); return next; })}><InboxIcon name="star" filled={pinnedConversations.has(selectedConversation.id)} /></button>
+                  <button type="button" className="inbox-icon-button thread-tag-action" aria-label="Manage contact tags" title="Contact tags" onClick={() => revealContact("details", true)}><InboxIcon name="tag" /></button>
+                  <details className="thread-more-menu"><summary className="inbox-icon-button" aria-label="Conversation actions" title="Conversation actions"><InboxIcon name="more" /></summary><div><button type="button" onClick={() => void refreshThread(selectedConversation.id)}>Refresh messages</button><button type="button" onClick={() => revealContact()}>Contact details</button><a href="/channels">Manage channel</a></div></details>
+                  <button type="button" className="takeover-button" onClick={() => void handleModeChange(selectedConversation.mode === "human" ? "chatbot" : "human")} title={selectedConversation.mode === "human" ? "Resume chatbot replies" : "Pause the chatbot and take over"}><InboxIcon name="user" /><span>{selectedConversation.mode === "human" ? "Release" : "Takeover"}</span></button>
+                  <button ref={detailsToggleRef} type="button" className="inbox-icon-button thread-details-action" onClick={() => revealContact()} aria-label="Contact details" aria-expanded={mobileInspectorOpen} aria-controls="inbox-contact-details" title="Contact details"><InboxIcon name="info" /></button>
+                </div>
               </header>
 
               <div className="thread-toolbar">
                 <div className="thread-toolbar-fields">
                   <label className="thread-field">
-                    <span>Assignee</span>
+                    <span className="sr-only">Assignee</span><InboxIcon name="user" />
                     <select aria-label="Assign conversation" value={selectedConversation.assigned_user?.id ?? ""}
                       onChange={(event) => void assignInboxConversation(selectedConversation.id, event.target.value || null)
                         .then(updateConversation).catch((error) => setSendError(error instanceof Error ? error.message : "Assignment could not be changed."))}>
@@ -718,7 +813,7 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
                     </select>
                   </label>
                   <label className="thread-field">
-                    <span>Status</span>
+                    <span className="sr-only">Status</span><span className={`conversation-status-dot status-${selectedConversation.status}`} aria-hidden="true" />
                     <select aria-label="Conversation status" value={selectedConversation.status}
                       onChange={(event) => void changeInboxConversationStatus(selectedConversation.id, event.target.value as ConversationStatus)
                         .then(updateConversation).catch((error) => setSendError(error instanceof Error ? error.message : "Status could not be changed."))}>
@@ -727,30 +822,47 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
                   </label>
                 </div>
                 <div className="reply-mode" role="group" aria-label="Reply mode">
-                  <button type="button" aria-pressed={(selectedConversation.mode ?? "chatbot") === "chatbot"} onClick={() => void handleModeChange("chatbot")} title="Chatbot replies automatically">Chatbot</button>
+                  <button type="button" aria-pressed={(selectedConversation.mode ?? "chatbot") === "chatbot"} onClick={() => void handleModeChange("chatbot")} title="Chatbot replies automatically" aria-label="AI chatbot replies"><InboxIcon name="sparkle" />AI</button>
                   <button type="button" aria-pressed={selectedConversation.mode === "human"} onClick={() => void handleModeChange("human")} title="Pause automation and reply manually">Human</button>
                 </div>
               </div>
-              {showContactDetails && <aside id="inbox-contact-details" className="thread-contact-summary" aria-label="Contact details">
-                <span>{contactDetails?.name || selectedConversation.contact.name || "Unknown contact"}</span>
-                <span>{contactDetails?.phone_number || selectedConversation.contact.phone_number}</span>
-                {contactDetails?.email && <span>{contactDetails.email}</span>}
-                <a href="/contacts">View contact</a>
-              </aside>}
 
-              <div className="message-history min-h-0 flex-1 overflow-y-auto" ref={threadRef} aria-live="polite" aria-label="Messages">
-                {canLoadEarlier && !messagesLoading && (
-                  <button type="button" className="load-earlier-button" disabled={loadingEarlier} onClick={() => void loadMessages(selectedConversation.id, true)}>{loadingEarlier ? "Loading…" : "Load earlier messages"}</button>
+              <div className="message-area">
+                <div className="message-history min-h-0 flex-1 overflow-y-auto" ref={threadRef} onScroll={updateScrollPosition} tabIndex={0} role="log" aria-live="polite" aria-label="Messages">
+                  {canLoadEarlier && !messagesLoading && (
+                    <button type="button" className="load-earlier-button" disabled={loadingEarlier} onClick={() => void loadMessages(selectedConversation.id, true)}>{loadingEarlier ? "Loading…" : "Load earlier messages"}</button>
+                  )}
+                  {messagesLoading && messages.length === 0 && <div className="thread-state" role="status"><span className="loading-spinner" /><span>Loading messages…</span></div>}
+                  {messagesError && messages.length === 0 && (
+                    <div className="thread-state" role="alert"><p>{messagesError}</p><button className="text-action" type="button" onClick={() => void refreshThread(selectedConversation.id)}>Try again</button></div>
+                  )}
+                  {!messagesLoading && !messagesError && messages.length === 0 && (
+                    <div className="thread-state"><span className="empty-state-mark">✉</span><p className="mt-3 text-sm text-slate-500">No messages in this conversation yet.</p></div>
+                  )}
+                  <div className="message-history-content" ref={messageContentRef}>
+                    {messages.map((message, index) => {
+                      const timestamp = message.sent_at ?? message.created_at;
+                      const previous = messages[index - 1];
+                      const startsDay = !previous || messageDay(timestamp) !== messageDay(previous.sent_at ?? previous.created_at);
+                      return (
+                        <Fragment key={message.id}>
+                          {startsDay && <div className="message-date"><span>{messageDayLabel(timestamp)}</span></div>}
+                        <MessageBubble message={message} contactName={selectedConversation.contact.name} />
+                        </Fragment>
+                      );
+                    })}
+                  </div>
+                  {messagesError && messages.length > 0 && <p role="status" className="thread-inline-error">{messagesError}</p>}
+                </div>
+                {awayFromLatest && messages.length > 0 && (
+                  <button type="button" className="jump-to-latest" onClick={() => {
+                    const history = threadRef.current;
+                    if (!history) return;
+                    history.scrollTop = history.scrollHeight;
+                    updateScrollPosition();
+                    history.focus({ preventScroll: true });
+                  }}><InboxIcon name="down" /><span>Latest messages</span></button>
                 )}
-                {messagesLoading && messages.length === 0 && <div className="thread-state" role="status"><span className="loading-spinner" /><span>Loading messages…</span></div>}
-                {messagesError && messages.length === 0 && (
-                  <div className="thread-state" role="alert"><p>{messagesError}</p><button className="text-action" type="button" onClick={() => void refreshThread(selectedConversation.id)}>Try again</button></div>
-                )}
-                {!messagesLoading && !messagesError && messages.length === 0 && (
-                  <div className="thread-state"><span className="empty-state-mark">✉</span><p className="mt-3 text-sm text-slate-500">No messages in this conversation yet.</p></div>
-                )}
-                {messages.map((message) => <MessageBubble key={message.id} message={message} />)}
-                {messagesError && messages.length > 0 && <p role="status" className="thread-inline-error">{messagesError}</p>}
               </div>
 
               <div className="composer-wrap">
@@ -835,9 +947,17 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
                     </button>
                   </form>
                 )}
-                <form className="reply-composer" onSubmit={sendReply} noValidate>
+                <form className="reply-composer" onSubmit={sendReply} noValidate onKeyDown={(event) => { if (event.key === "Escape") { setComposerTool(null); composerRef.current?.focus(); } }}>
+                  {composerTool && <div className="composer-toolbox">
+                    <header><strong>{composerTool === "emoji" ? "Emoji" : composerTool === "quick" ? "Quick replies" : composerTool === "variables" ? "Contact variables" : "Add to your reply"}</strong><button type="button" className="inbox-icon-button" aria-label="Close reply tools" onClick={() => setComposerTool(null)}><InboxIcon name="close" /></button></header>
+                    {composerTool === "emoji" && <div className="composer-emoji-list">{["😀", "😊", "👍", "🙏", "🎉", "❤️", "✅", "👋"].map((emoji) => <button type="button" key={emoji} onClick={() => insertDraft(emoji)} aria-label={`Insert ${emoji}`}>{emoji}</button>)}</div>}
+                    {composerTool === "quick" && <div className="composer-option-list">{["Hi! How can I help you today?", "Thank you for reaching out. I'll check and get back to you.", "You're welcome! Let us know if you need anything else."].map((reply) => <button type="button" key={reply} onClick={() => insertDraft(reply)}>{reply}</button>)}</div>}
+                    {composerTool === "variables" && <div className="composer-option-list">{[["Contact name", selectedConversation.contact.name], ["Phone number", selectedConversation.contact.phone_number], ["Email", contactDetails?.email]].map(([label, value]) => <button type="button" key={label} disabled={!value} onClick={() => value && insertDraft(value)}>{label}<span>{value || "Not available"}</span></button>)}</div>}
+                    {composerTool === "add" && <div className="composer-option-list"><button type="button" onClick={() => { setComposerTool(null); void openTemplatePicker(); }}>Approved template or media header</button><button type="button" onClick={() => setComposerTool("quick")}>Quick reply</button><button type="button" onClick={() => setComposerTool("variables")}>Contact information</button></div>}
+                  </div>}
                   <label htmlFor="reply-message" className="sr-only">Write a WhatsApp reply</label>
                   <textarea
+                    ref={composerRef}
                     className="resize-none"
                     id="reply-message"
                     value={draft}
@@ -851,16 +971,21 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
                     maxLength={MAX_TEXT_LENGTH}
                     placeholder={canReplyReason ? "Replies are unavailable" : "Write a reply…"}
                     disabled={Boolean(canReplyReason) || sending || uncertainSend}
-                    rows={2}
+                    rows={1}
                     aria-describedby="reply-guidance"
                   />
                   <div className="composer-footer">
-                    <button type="button" className="composer-template" disabled={Boolean(canReplyReason)} onClick={() => void openTemplatePicker()} aria-expanded={templateOpen}>
-                      <InboxIcon name={templateOpen ? "close" : "template"} /><span>Templates</span>
-                    </button>
+                    <div className="composer-tools" role="group" aria-label="Reply tools">
+                      <button type="button" className="composer-add" disabled={Boolean(canReplyReason) || sending || uncertainSend} aria-label="Add to reply" aria-expanded={composerTool === "add"} onClick={() => setComposerTool(composerTool === "add" ? null : "add")} title="Add to reply"><InboxIcon name="plus" /></button>
+                      <button type="button" disabled={Boolean(canReplyReason)} aria-label="Attach media using a template" title="Attach media using an approved template" onClick={() => void openTemplatePicker()}><InboxIcon name="attachment" /></button>
+                      <button type="button" disabled={Boolean(canReplyReason) || sending || uncertainSend} aria-label="Choose emoji" aria-expanded={composerTool === "emoji"} title="Emoji" onClick={() => setComposerTool(composerTool === "emoji" ? null : "emoji")}><InboxIcon name="smile" /></button>
+                      <button type="button" disabled={Boolean(canReplyReason) || sending || uncertainSend} aria-label="Quick replies" aria-expanded={composerTool === "quick"} title="Quick replies" onClick={() => setComposerTool(composerTool === "quick" ? null : "quick")}><InboxIcon name="lightning" /></button>
+                      <button type="button" disabled={Boolean(canReplyReason) || sending || uncertainSend} aria-label="Insert contact variable" aria-expanded={composerTool === "variables"} title="Contact variables" onClick={() => setComposerTool(composerTool === "variables" ? null : "variables")}><InboxIcon name="variable" /></button>
+                    </div>
                     <div className="composer-send-actions">
-                      <span id="reply-guidance" className="composer-guidance">Enter to send</span>
+                      <span id="reply-guidance" className="sr-only">Enter to send. Shift + Enter for a new line.</span>
                       {Array.from(draft).length > MAX_TEXT_LENGTH * 0.85 && <span className="character-count">{Array.from(draft).length}/{MAX_TEXT_LENGTH}</span>}
+                      <button type="button" className="composer-template" disabled={Boolean(canReplyReason)} onClick={() => void openTemplatePicker()} aria-expanded={templateOpen}><InboxIcon name={templateOpen ? "close" : "template"} /><span>Templates</span></button>
                       <button type="submit" disabled={!draft.trim() || Boolean(canReplyReason) || sending || uncertainSend} className="send-button" title="Send message (Enter). Shift + Enter adds a new line.">
                         {sending ? "Sending…" : <><span>Send</span><InboxIcon name="send" /></>}
                       </button>
@@ -878,31 +1003,20 @@ export function InboxClient({ initialConversationId }: InboxClientProps) {
           )}
         </section>
         {selectedConversation && showContactDetails && (
-          <aside className="inbox-contact-panel" aria-label="Contact and conversation information">
-            <header>
-              <h2>Contact details</h2>
-              <button type="button" className="inbox-icon-button" onClick={() => { setShowContactDetails(false); detailsToggleRef.current?.focus(); }} title="Close contact details" aria-label="Close contact details"><InboxIcon name="close" /></button>
-            </header>
-            <div className="contact-panel-person">
-              <span className="contact-avatar" aria-hidden="true">{contactInitial(contactDetails?.name || selectedConversation.contact.name)}</span>
-              <h3>{contactDetails?.name || selectedConversation.contact.name || "Unknown contact"}</h3>
-              <p>{contactDetails?.phone_number || selectedConversation.contact.phone_number || "Phone unavailable"}</p>
-              {contactDetails?.email && <p>{contactDetails.email}</p>}
-              <a href="/contacts">View contact <span aria-hidden="true">↗</span></a>
-            </div>
-            <dl className="contact-panel-facts">
-              <div><dt>Channel</dt><dd>{selectedConversation.channel.name}</dd></div>
-              <div><dt>Status</dt><dd className="capitalize">{selectedConversation.status}</dd></div>
-              <div><dt>Assignee</dt><dd>{selectedConversation.assigned_user ? [selectedConversation.assigned_user.first_name, selectedConversation.assigned_user.last_name].filter(Boolean).join(" ") : "Unassigned"}</dd></div>
-            </dl>
-          </aside>
+          <InboxContactPanel
+            conversation={selectedConversation} users={users} tab={panelTab} onTab={setPanelTab}
+            onClose={() => { setShowContactDetails(false); setMobileInspectorOpen(false); detailsToggleRef.current?.focus(); }}
+            onUpdate={(updated) => void updateConversation(updated)} onSelect={selectConversation}
+            onModeChange={(mode) => void handleModeChange(mode)} openTags={openTagPicker}
+            onTagsOpened={() => setOpenTagPicker(false)}
+          />
         )}
       </div>
     </section>
   );
 }
 
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({ message, contactName }: { message: Message; contactName: string | null }) {
   const [mediaError, setMediaError] = useState(false);
   const [downloadingMedia, setDownloadingMedia] = useState(false);
   const outbound = message.direction === "outbound";
@@ -934,6 +1048,7 @@ function MessageBubble({ message }: { message: Message }) {
 
   return (
     <article className={`message-row ${outbound ? "message-row-outbound" : "message-row-inbound"}`}>
+      {!outbound && <span className="message-avatar" aria-hidden="true">{contactInitial(contactName)}</span>}
       <div className={`message-bubble ${outbound ? "message-bubble-outbound" : "message-bubble-inbound"}`}>
         {message.text && <p className="message-text">{message.text}</p>}
         {mediaUrl && !mediaError && message.message_type === "image" && (
@@ -952,9 +1067,9 @@ function MessageBubble({ message }: { message: Message }) {
           <p className="message-attachment-pending">{message.message_type === "location" ? "Location message" : `${message.message_type} message`}</p>
         )}
         <footer className="message-meta">
-          <time dateTime={time} title={fullTime(time)}>{shortTime(time)}</time>
+          <time dateTime={time} title={fullTime(time)}>{messageTime(time)}</time>
           {outbound && <span className={`message-delivery message-delivery-${message.status}`} title={`Message ${message.status}`}>
-            {message.status === "pending" ? "Sending" : message.status === "failed" ? "Failed" : message.status === "read" ? "Read" : message.status === "delivered" ? "Delivered" : "Sent"}
+            {message.status === "pending" ? "Sending" : message.status === "failed" ? "Failed" : <><InboxIcon name={message.status === "read" || message.status === "delivered" ? "checks" : "tick"} /><span className="sr-only">{message.status === "read" ? "Read" : message.status === "delivered" ? "Delivered" : "Sent"}</span></>}
           </span>}
         </footer>
         {outbound && message.status === "failed" && message.error_message && <p className="message-failure">{message.error_message}</p>}

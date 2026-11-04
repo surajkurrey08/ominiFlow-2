@@ -1,7 +1,7 @@
 # Workspace UX contract
 
-This records the inbox refinement and the existing owners it reuses. It does not
-authorize a migration of other application screens.
+This records the inbox refinement, shared workspace navigation, and their
+existing owners. Sibling page content retains its own layout and behavior.
 
 ## Product context and sources
 
@@ -12,31 +12,53 @@ native controls, clear focus and responsive reflow.
 Business behavior is owned by `backend/app/api/conversations.py`,
 `backend/app/services/outbound_message_service.py` and the matching contracts in
 `frontend/src/lib/api/inbox.ts`. `README.md` identifies the multi-tenant platform.
-The screenshot and current user request establish the visual cleanup scope.
+The latest user-supplied three-column screenshot establishes the reference matching scope.
 
 ## Canonical UI Map
 
 | Capability | Canonical owner | Source of truth | Allowed variants | Verification |
 |---|---|---|---|---|
-| Select/Listbox | Native select in inbox-client.tsx | Existing options and handlers; platform-owned popup | Filters, assignee, status, templates | Browser keyboard and open-popup checks |
-| Form | Existing inbox sendReply/sendTemplate handlers | frontend/src/components/inbox/inbox-client.tsx | Text reply and approved template | Existing tests and isolated browser fixture |
+| Navigation | Shared AppShell | app-shell.tsx and shared workspace CSS | Active route, desktop collapse, mobile drawer, account disclosure | Cross-route browser comparison and narrow navigation |
+| Modal | AppDialog | Native dialog with shared CSS | Template preview, sync, delete confirmation, AI generator and website connection | Focus, Escape, scroll and return-focus browser checks |
+| Website pairing | WebChatSetupDialog / channels browser client | Tenant-scoped web_chat_pairing_service and connector protocol | Create website channel, connect existing channel, authorization, activity check | Pairing DB tests, channel allowlist tests and isolated cross-origin browser verification |
+| Template management | TemplatesClient / PlatformTemplateLibrary | Existing templates browser clients and backend template APIs | Library draft/submit, saved list/filter/sync/delete | Isolated browser fixture and template proxy tests |
+| Select/Listbox | Native controls in Inbox and Templates | Existing options and handlers; platform-owned popup | Filters, assignee, status, template category/channel | Browser keyboard and open-popup checks |
+| Form | Existing Inbox, Templates and Web Chat handlers | inbox-client.tsx, TemplatesClient, PlatformTemplateLibrary and WebChatSetupDialog | Reply, template samples, library admin, AI drafts and website setup | Existing tests and isolated browser fixture |
 | Scrollbar | frontend/src/app/globals.css | DESIGN.md and scoped inbox CSS | Conversation list, history, inspector | Overflow measurements and browser screenshots |
 | Toast | Existing inline live regions | Inbox errors and status feedback | Loading, error, connection state | Failure and loading preview |
-| CRUD | frontend/src/lib/api/inbox.ts | Backend conversation and outbound contracts | Read, reply, assignment, status, mode | Existing inbox tests; fixture interactions |
+| CRUD | frontend/src/lib/api/inbox.ts and existing Contacts/Tags browser clients | Backend conversation and outbound contracts | Read, reply, assignment, status, mode | Existing inbox tests; fixture interactions |
 
 ## Visual contract
 
 `DESIGN.md` mirrors the existing CSS source; the inbox palette is scoped to that
-route. Native selectors deliberately retain OS-owned option popups. The shared
-shell and other routes retain existing layout and controls.
+route. Native selectors deliberately retain OS-owned option popups. All workspace
+routes share the same sidebar logo, icons, order, width, selection treatment and
+account controls. Inbox alone owns its bounded content height and custom header.
+Other routes retain their existing page content, headers and document scrolling.
+Desktop sidebar visibility is controlled from the page header as well as the
+sidebar footer. Inbox keeps Hide Menu / Show Menu available in both states;
+the toggle announces its expanded state and references the shared sidebar.
+Hiding releases the sidebar's content margin and persists the existing local
+preference. Mobile uses the labelled menu button and closes on navigation.
+The latest compact-density request reduces shared sidebar link heights and
+Inbox header/list/composer spacing through CSS sizing, with no whole-app zoom
+or transform. At a 1278 × 666 effective desktop viewport, all main sidebar links
+through Settings remain visible, at least six conversation rows fit, and chat
+history and reply actions remain available with the sidebar open or hidden.
 
 ## Navigation and dataset state
 
 Keep conversation selection in the existing URL query parameter. Keep paging,
-filter resets, stale-response guards and list ordering unchanged. Search remains
+filter resets and stale-response guards. A pinned conversation moves to the top of the current view; other conversations retain API order. Search remains
 explicit-submit, matching the existing workflow; clear immediately resets the
 query and returns focus. Filters can be collapsed without losing their values.
-Mobile back returns to the same conversation list. Contact details are optional.
+Mobile back returns to the same conversation list. Contact details default open on desktop (1180px+), and open on request as an overlay on smaller screens.
+Message dates use local calendar-day dividers; each bubble shows its local clock
+time and retains the full timestamp in its title. History resize follows the
+bottom only while the reader is near it. Reading older messages preserves scroll
+position and offers a keyboard-accessible latest-messages shortcut. Loading an
+older page retains the visible message position. Customer text is displayed as
+stored; this presentation change does not rewrite message data.
 
 ## Mutations and recovery
 
@@ -44,8 +66,7 @@ Retain the existing send guards, idempotency keys and uncertain-send protection.
 Retry still requires an explicit confirmation after checking message delivery;
 its presentation is an inline disclosure instead of a browser confirmation.
 Do not remove delivery failures, disconnected-channel guidance or permission
-errors as part of removing decorative text. No networking or authorization
-behavior changes are part of this UI task.
+errors as part of removing decorative text. Provider tabs add the enumerated `channel_type` filter through the existing inbox proxy and conversation-list API. The service scopes the channel subquery to the current tenant. Existing permission checks remain authoritative.
 
 ## Verification
 
@@ -54,3 +75,46 @@ build, and the premium static audit scoped to this changed workflow. Use the rea
 Next.js route with an isolated fixture backend for desktop/mobile, inspector,
 filters, compose, empty, loading and error states. Compare shared navigation with
 the existing contacts screen. The fixture never sends real customer messages.
+
+## Reference-specific controls
+
+Overview cards fetch actual all/unassigned/pending/resolved totals; unread counts
+come from the same tenant-scoped listing. Email is shown unavailable while no
+email integration exists. Provider tabs do not invent unsupported API providers.
+Contact tags persist through the existing contact-tags endpoint. Previous
+conversations use the existing contact-conversation pagination. Notes displays
+existing custom-field content only. AI/Human controls and takeover share the
+existing conversation-mode mutation. Contact variables and quick replies only
+edit the draft. Avatar initials represent missing photos honestly.
+
+## Template management
+
+Website connections remain on Channels and use AppDialog with a website name and
+origin form. Validation preserves inputs and focuses the first invalid field.
+Only tenant-authorized channel managers can start or cancel a handoff. Cancellation
+targets the exact request, so closing an older window cannot cancel a newer one.
+The configured website first announces its admin origin from the same popup;
+every later message is checked against that origin, popup and request ID. A popup
+message never authorizes an installation by itself: the panel polls the server.
+Readiness, awaiting approval, authorization and actual stored visitor activity
+have distinct labels. Missing connector, public service configuration, blocked
+popup, expiry and closed-window states preserve a clear retry/cancel path.
+
+Top search, refresh, sync, filters and both creation shortcuts appear before the
+Library / My templates view switch. Switching
+views retains each view's search/filter state. Shared Library search is local;
+saved-template search remains debounced, stale-response guarded and immediately
+clearable. The Filter button opens real filters. Existing editor routes and
+sessionStorage draft contract remain canonical for new/duplicate/library drafts.
+Template submission still requires a connected channel and all variable samples;
+the explicit confirmation uses the existing Meta submission API. UI cleanup does
+not submit, approve, deactivate or delete production templates automatically.
+Delete retains confirmation, focuses Cancel, blocks duplicate requests, and
+reports failures inside the dialog. Failed synchronization and generation remain
+visible and actionable. No essential failure, provider status or credit feedback
+is removed as unwanted text.
+Both template views show at most 12 items per page. Library paging follows its
+local category/search results and resets to page 1 on filter changes; saved
+templates use the existing server pagination with page_size=12. Bottom Previous
+and Next controls disable at boundaries. Explicit library page changes focus
+and scroll to the results, while view switches retain each view's state.

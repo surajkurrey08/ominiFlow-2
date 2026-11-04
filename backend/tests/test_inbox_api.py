@@ -262,6 +262,18 @@ class ConversationApiTests(InboxTestCase):
             with self.subTest(query=query):
                 self.assertEqual(self.client.get(f"{CONVERSATIONS}{query}", headers=self.headers()).status_code, 422)
 
+    def test_channel_type_filter_is_tenant_scoped_and_composes_with_pagination(self):
+        instagram = self.make_conversation(self.tenant_a, self.bob, self.ig_a)
+        self.db.commit()
+        self.assertEqual(self.ids("?channel_type=instagram"), [str(instagram.id)])
+        whatsapp = self.client.get(f"{CONVERSATIONS}?channel_type=whatsapp&page_size=2", headers=self.headers()).json()
+        self.assertEqual(whatsapp["total"], 3)
+        self.assertEqual(len(whatsapp["items"]), 2)
+        self.assertTrue(all(item["channel"]["channel_type"] == "whatsapp" for item in whatsapp["items"]))
+        self.assertNotIn(str(self.conv_b.id), self.ids("?channel_type=whatsapp"))
+        self.assertEqual(self.ids(f"?channel_type=instagram&channel_id={self.wa_a.id}"), [])
+        self.assertEqual(self.client.get(f"{CONVERSATIONS}?channel_type=email", headers=self.headers()).status_code, 422)
+
     def test_get_and_update(self):
         url = f"{CONVERSATIONS}/{self.conv_alice.id}"
         self.assertEqual(self.client.get(url, headers=self.headers(self.viewer)).json()["id"], str(self.conv_alice.id))

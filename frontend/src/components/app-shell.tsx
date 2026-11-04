@@ -3,8 +3,11 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
+import { ArrowsClockwiseIcon, HouseIcon, EnvelopeIcon, UsersIcon, ShareNetworkIcon, LightningIcon, RobotIcon, FilesIcon, BroadcastIcon, ChartBarIcon, GearIcon, CaretDoubleLeftIcon, type Icon } from "@phosphor-icons/react";
 
 import type { AuthContext } from "@/lib/auth/session";
+import { WorkspaceShellContext } from "@/components/workspace-shell-context";
+import { listInboxConversations } from "@/lib/api/inbox";
 
 const navigation = [
   { label: "Analytics", href: "/analytics", mark: "A" },
@@ -25,23 +28,40 @@ const navigation = [
   { label: "Settings", href: "/settings", mark: "⚙" },
 ];
 
+const workspaceNavigationOrder = ["/dashboard", "/inbox", "/contacts", "/channels", "/automations", "/ai-configuration", "/templates", "/campaigns", "/analytics", "/team", "/settings"];
+const workspaceNavigationIcons: Record<string, Icon> = {
+  "/dashboard": HouseIcon, "/inbox": EnvelopeIcon, "/contacts": UsersIcon, "/channels": ShareNetworkIcon,
+  "/automations": LightningIcon, "/ai-configuration": RobotIcon, "/templates": FilesIcon,
+  "/campaigns": BroadcastIcon, "/analytics": ChartBarIcon, "/team": UsersIcon, "/settings": GearIcon,
+};
+
 interface AppShellProps extends AuthContext {
   children: ReactNode;
 }
 
 export function AppShell({ user, tenant, children }: AppShellProps) {
   const pathname = usePathname();
+  const isInbox = pathname === "/inbox";
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [inboxTotal, setInboxTotal] = useState<number | null>(null);
   const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ");
   const initials = [user.first_name[0], user.last_name?.[0]].filter(Boolean).join("").toUpperCase();
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("omniflow_sidebar_collapsed");
-      if (saved === "true") setSidebarCollapsed(true);
-    } catch {}
+    const frame = requestAnimationFrame(() => {
+      try { setSidebarCollapsed(localStorage.getItem("omniflow_sidebar_collapsed") === "true"); } catch {}
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void listInboxConversations({ page: 1, page_size: 1 }).then((result) => {
+      if (active) setInboxTotal(result.total);
+    }).catch(() => { /* Navigation stays usable when the count is unavailable. */ });
+    return () => { active = false; };
   }, []);
 
   const toggleSidebar = () => {
@@ -94,13 +114,14 @@ export function AppShell({ user, tenant, children }: AppShellProps) {
   }
 
   return (
-    <div className="min-h-screen bg-[#f5f7f6] text-slate-900">
+    <WorkspaceShellContext.Provider value={{ fullName, initials, inboxTotal, sidebarCollapsed, mobileNavigationOpen: mobileOpen, setInboxTotal, toggleNavigation: () => { if (window.matchMedia("(min-width: 768px)").matches) toggleSidebar(); else setMobileOpen((open) => !open); }, logout }}>
+    <div className={`app-shell app-shell-workspace min-h-screen bg-[#f5f7f6] text-slate-900 ${isInbox ? "app-shell-inbox" : ""} ${pathname === "/templates" ? "app-shell-templates" : ""}`}>
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <aside id="app-sidebar" className={`app-sidebar ${mobileOpen ? "app-sidebar-open" : ""} ${sidebarCollapsed ? "app-sidebar-collapsed" : ""}`}>
         <div className="sidebar-header flex items-center justify-between w-full flex-shrink-0">
           <Link href="/dashboard" className="brand-lockup" onClick={() => setMobileOpen(false)}>
-            <span className="brand-mark" aria-hidden="true">o</span>
-            <span>omniflow</span>
+            <span className="brand-mark" aria-hidden="true"><ArrowsClockwiseIcon size={28} weight="bold" /></span>
+            <span>Omniflow</span>
           </Link>
           <button
             type="button"
@@ -118,11 +139,11 @@ export function AppShell({ user, tenant, children }: AppShellProps) {
         </div>
 
         <nav aria-label="Main navigation" className="sidebar-nav mt-8 space-y-1">
-          <p className="nav-section-label">WORKSPACE</p>
-          {[...navigation, ...(user.is_platform_super_admin
+          {[...workspaceNavigationOrder.map((href) => navigation.find((item) => item.href === href)!), ...(user.is_platform_super_admin
             ? [{ label: "Password reset requests", href: "/platform-admin/password-resets", mark: "🔐" }]
             : [])].map((item) => {
             const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`));
+            const NavigationIcon = workspaceNavigationIcons[item.href] ?? FilesIcon;
             return (
               <Link
                 key={item.href}
@@ -131,35 +152,35 @@ export function AppShell({ user, tenant, children }: AppShellProps) {
                 aria-current={active ? "page" : undefined}
                 className={`nav-link ${active ? "nav-link-active" : ""}`}
               >
-                <span className="nav-icon" aria-hidden="true">{item.mark}</span>
-                <span>{item.label}</span>
+                <span className="nav-icon" aria-hidden="true"><NavigationIcon size={25} /></span>
+                <span>{item.href === "/dashboard" ? "Home" : item.href === "/ai-configuration" ? "AI Chatbot" : item.href === "/automations" ? "Automation" : item.label}</span>
+                {item.href === "/inbox" && inboxTotal !== null && <span className="nav-inbox-count">{inboxTotal}</span>}
               </Link>
             );
           })}
+          <details className="inbox-extra-tools" open={navigation.some((item) => !workspaceNavigationOrder.includes(item.href) && (pathname === item.href || pathname.startsWith(`${item.href}/`)))}><summary>More tools</summary>{navigation.filter((item) => !workspaceNavigationOrder.includes(item.href)).map((item) => <Link key={item.href} href={item.href} aria-current={pathname === item.href || pathname.startsWith(`${item.href}/`) ? "page" : undefined} onClick={() => setMobileOpen(false)}>{item.label}</Link>)}</details>
         </nav>
 
         <div className="sidebar-bottom !pt-1 !border-t-0">
-          <div className="sidebar-user">
-            <span className="avatar avatar-small !w-7 !h-7 !text-[11px]">{initials || "O"}</span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-semibold text-white">{fullName || "Team member"}</span>
-            </span>
-          </div>
-          <button className="logout-button !mt-1 !py-1.5 !text-[13px]" type="button" onClick={logout}>Sign out</button>
-          <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-center gap-2 text-[11px] text-slate-400">
-            <Link href="/privacy" target="_blank" className="hover:text-white transition-colors">Privacy</Link>
-            <span>•</span>
-            <Link href="/terms" target="_blank" className="hover:text-white transition-colors">Terms</Link>
-            <span>•</span>
-            <Link href="/data-deletion" target="_blank" className="hover:text-white transition-colors">Data Deletion</Link>
-          </div>
+          <details className="workspace-sidebar-account">
+            <summary aria-label="Sidebar account menu"><span className="avatar avatar-small">{initials || "O"}</span></summary>
+            <div className="workspace-sidebar-account-menu">
+              <strong>{fullName || "Team member"}</strong>
+              <Link href="/settings" onClick={() => setMobileOpen(false)}>Account settings</Link>
+              <button type="button" onClick={logout}>Sign out</button>
+              <Link href="/privacy" target="_blank">Privacy</Link>
+              <Link href="/terms" target="_blank">Terms</Link>
+              <Link href="/data-deletion" target="_blank">Data Deletion</Link>
+            </div>
+          </details>
+          <button type="button" className="inbox-sidebar-collapse" aria-label="Hide sidebar menu" onClick={() => { if (window.matchMedia("(min-width: 768px)").matches) toggleSidebar(); else setMobileOpen(false); }}><CaretDoubleLeftIcon size={24} /></button>
         </div>
       </aside>
 
       {mobileOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />}
 
       <div className={`app-main-column ${sidebarCollapsed ? "app-main-column-expanded" : ""}`}>
-        <header className="app-topbar">
+        <header className={`app-topbar ${isInbox ? "inbox-shell-topbar" : ""}`}>
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -200,5 +221,6 @@ export function AppShell({ user, tenant, children }: AppShellProps) {
         <main id="main-content" className="app-content">{children}</main>
       </div>
     </div>
+    </WorkspaceShellContext.Provider>
   );
 }
