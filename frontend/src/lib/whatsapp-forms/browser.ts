@@ -51,8 +51,19 @@ async function request<T>(path: string, options: { method?: string; body?: unkno
   return payload as T;
 }
 
+export interface WhatsAppFormSubmission {
+  id: string;
+  tenant_id: string;
+  form_id: string;
+  contact_phone: string | null;
+  contact_name: string | null;
+  data: Record<string, any>;
+  created_at: string;
+}
+
 export const listForms = (page = 1, size = 100) => request<{ items: WhatsAppForm[], total: number }>(`?page=${page}&size=${size}`);
 export const getForm = (id: string) => request<WhatsAppForm>(`/${id}`);
 export const createForm = (input: { name: string; category?: string; config?: any }) => request<WhatsAppForm>("", { method: "POST", body: input });
 export const updateForm = (id: string, body: { name?: string; category?: string; status?: string; config?: any }) => request<WhatsAppForm>(`/${id}`, { method: "PATCH", body });
 export const deleteForm = (id: string) => request<void>(`/${id}`, { method: "DELETE" });
+export const listSubmissions = (formId: string) => request<WhatsAppFormSubmission[]>(`/${formId}/submissions`);

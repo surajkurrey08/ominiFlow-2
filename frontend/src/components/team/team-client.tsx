@@ -204,9 +204,7 @@ export function TeamClient({ currentUser }: { currentUser: CurrentUser }) {
     <section className="page-enter max-w-5xl">
       <header className="channel-header">
         <div>
-          <p className="eyebrow">OMNIFLOW WORKSPACE</p>
-          <h1 className="page-title mt-2">Team</h1>
-          <p className="page-subtitle mt-2">The people and roles in your workspace.</p>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Team</h1>
         </div>
         <div className="flex items-center gap-2">
           <button

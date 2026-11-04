@@ -180,7 +180,7 @@ export function AppShell({ user, tenant, children }: AppShellProps) {
       {mobileOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />}
 
       <div className={`app-main-column ${sidebarCollapsed ? "app-main-column-expanded" : ""}`}>
-        <header className={`app-topbar ${isInbox ? "inbox-shell-topbar" : ""}`}>
+        <header className={`app-topbar ${isInbox ? "inbox-shell-topbar" : ""} ${sidebarCollapsed ? "flex" : "flex md:!hidden"}`}>
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -192,30 +192,22 @@ export function AppShell({ user, tenant, children }: AppShellProps) {
               <span className="sr-only">{mobileOpen ? "Close navigation" : "Open navigation"}</span>
               <span aria-hidden="true">{mobileOpen ? "×" : "☰"}</span>
             </button>
-            <button
-              type="button"
-              className={`desktop-sidebar-toggle hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                sidebarCollapsed
-                  ? "bg-[#0b1028] text-white border-[#0b1028] hover:bg-[#1a224a] shadow-sm"
-                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
-              }`}
-              onClick={toggleSidebar}
-              title={sidebarCollapsed ? "Expand sidebar menu (Ctrl+B)" : "Hide sidebar menu (Ctrl+B)"}
-              aria-label={sidebarCollapsed ? "Expand sidebar menu" : "Hide sidebar menu"}
-              aria-expanded={!sidebarCollapsed}
-            >
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                <line x1="9" y1="3" x2="9" y2="21" />
-                <path d={sidebarCollapsed ? "m12 9 3 3-3 3" : "m15 9-3 3 3 3"} />
-              </svg>
-              <span>{sidebarCollapsed ? "Expand Menu" : "Hide Menu"}</span>
-            </button>
-            <div className="topbar-breadcrumb">Workspace <span>/</span> <strong>{navigation.find((item) => item.href === pathname)?.label ?? "Workspace"}</strong></div>
-          </div>
-          <div className="topbar-user">
-            <span className="topbar-tenant">{tenant.name}</span>
-            <span className="avatar avatar-top">{initials || "O"}</span>
+            {sidebarCollapsed && (
+              <button
+                type="button"
+                className="desktop-sidebar-toggle hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer bg-[#0b1028] text-white border-[#0b1028] hover:bg-[#1a224a] shadow-sm"
+                onClick={toggleSidebar}
+                title="Expand sidebar menu (Ctrl+B)"
+                aria-label="Expand sidebar menu"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                  <line x1="9" y1="3" x2="9" y2="21" />
+                  <path d="m12 9 3 3-3 3" />
+                </svg>
+                <span>Expand Menu</span>
+              </button>
+            )}
           </div>
         </header>
         <main id="main-content" className="app-content">{children}</main>
