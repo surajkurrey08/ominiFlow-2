@@ -1,6 +1,8 @@
 """Channel configuration and actual Web Chat routing; all fixture rows roll back."""
 import uuid
+from unittest.mock import patch
 
+from app.core.config import settings
 from app.models import Flow, Keyword, KeywordTrigger, TenantRoutingConfig, Message
 from app.services import flow_engine, flow_runner
 from tests.inbox_fixtures import InboxTestCase
@@ -12,9 +14,17 @@ class ChannelScopeTests(InboxTestCase):
 
     def site(self, name="Website"):
         r = self.client.post("/api/v1/channels/web-chat/setup", headers=self.head(),
-                             json={"name": name, "website_url": "http://localhost:5173"})
+                             json={"name": name, "website_url": f"https://fixture-{uuid.uuid4().hex}.example.com"})
         self.assertEqual(r.status_code, 201, r.text)
         return r.json()
+
+    def test_production_fixtures_use_https_and_local_http_stays_rejected(self):
+        with patch.object(settings, "app_env", "production"):
+            channel = self.site("Production-safe fixture")
+            self.assertTrue(channel["provider_metadata"]["web_chat"]["website_origin"].startswith("https://"))
+            response = self.client.post("/api/v1/channels/web-chat/setup", headers=self.head(),
+                                        json={"name": "Invalid local fixture", "website_url": "http://localhost:5173"})
+            self.assertEqual(response.status_code, 422)
 
     def flow(self, channel, text="Channel-specific reply"):
         r = self.client.post("/api/v1/flows", headers=self.head(),
