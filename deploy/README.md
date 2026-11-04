@@ -79,10 +79,10 @@ docker inspect lovenzea-gateway >/dev/null
 docker network inspect lovenzea_default >/dev/null
 docker exec lovenzea-gateway nginx -t
 
-# The live server already pulls this HTTPS remote successfully; preserve it.
+# The workflow sets the canonical public HTTPS remote before every fetch.
 # A new private checkout needs its own GitHub read authentication.
 # If /var/www/fmfilms already exists, inspect it first; never overwrite blindly.
-git clone --branch main https://github.com/WorknAi006/ominiFlow-2.git /var/www/fmfilms
+git clone --branch main https://github.com/surajkurrey08/ominiFlow-2.git /var/www/fmfilms
 cd /var/www/fmfilms
 python3 deploy/init-env.py
 chmod 600 .env
