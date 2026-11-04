@@ -13,6 +13,9 @@ re-processed message never triggers twice.
 Match policy for overlapping keywords: the oldest active keyword that
 matches wins (deterministic first-match by created_at ascending). Exactly
 one flow is triggered per message.
+
+Only explicitly assigned keywords and flows run on a channel. Existing
+unassigned rules remain visible for manual assignment and never act globally.
 """
 import logging
 import uuid
@@ -23,6 +26,7 @@ from sqlalchemy.orm import Session
 from app.models import Contact, Conversation, Keyword, KeywordTrigger
 from app.models.keyword_trigger import KeywordTriggerAction, KeywordTriggerStatus
 from app.models.message import Message, MessageDirection
+from app.services.channel_scope_service import flow_matches_channel
 
 logger = logging.getLogger("app.services.keyword_trigger")
 
@@ -60,13 +64,26 @@ def text_matches(message_text: str, keyword_text: str, match_type: str) -> bool:
     return _single_match(m, _normalize(keyword_text), match_type)
 
 
-def find_matching_keyword(session: Session, tenant_id: uuid.UUID, text: str) -> Keyword | None:
-    """First active keyword whose rule matches the text, prioritizing keywords with configured actions."""
+def find_matching_keyword(
+    session: Session,
+    tenant_id: uuid.UUID,
+    text: str,
+    channel_connection_id: uuid.UUID | None = None,
+) -> Keyword | None:
+    """Match only this channel; old unassigned rules are never a fallback."""
+    if channel_connection_id is None:
+        return None
+    base_filter = [Keyword.tenant_id == tenant_id, Keyword.is_active.is_(True)]
+    base_filter.append(Keyword.channel_connection_id == channel_connection_id)
     keywords = session.execute(
         select(Keyword)
-        .where(Keyword.tenant_id == tenant_id, Keyword.is_active.is_(True))
+        .where(*base_filter)
         .order_by(Keyword.created_at.asc(), Keyword.id.asc())
     ).scalars().all()
+    # Recheck flow scope at runtime, including rows created before validation.
+    from app.models import Flow
+    keywords = [kw for kw in keywords if kw.flow_id is None or flow_matches_channel(
+        session.get(Flow, kw.flow_id), tenant_id, channel_connection_id)]
     # First pass: find active keyword with configured flow or reply
     for kw in keywords:
         if (kw.flow_id is not None or (kw.reply_text and kw.reply_text.strip())) and text_matches(text, kw.keyword_text, kw.match_type):
@@ -83,20 +100,26 @@ def _global_fallback_trigger(
     *,
     tenant_id: uuid.UUID,
     channel_type: str,
+    channel_connection_id: uuid.UUID | None = None,
     conversation: Conversation,
     contact: Contact,
     message: Message,
 ) -> KeywordTrigger | None:
-    """When no keyword matched, run the tenant's configured global fallback
-    flow (the "master flow collection"), reusing the keyword-trigger delivery
-    path. Returns None when no fallback flow is configured."""
+    """Use only the incoming channel's explicit fallback; never inherit a global one."""
     from app.models import Flow, TenantRoutingConfig
 
-    config = (
-        session.query(TenantRoutingConfig)
-        .filter(TenantRoutingConfig.tenant_id == tenant_id)
-        .first()
-    )
+    # Try channel-specific config first
+    config = None
+    if channel_connection_id is not None:
+        config = (
+            session.query(TenantRoutingConfig)
+            .filter(
+                TenantRoutingConfig.tenant_id == tenant_id,
+                TenantRoutingConfig.channel_connection_id == channel_connection_id,
+            )
+            .first()
+        )
+    # A different business's global fallback must never fill this gap.
     if config is None:
         return None
 
@@ -122,7 +145,7 @@ def _global_fallback_trigger(
 
     if config.fallback_action == "flow" and config.fallback_flow_id is not None:
         flow = session.get(Flow, config.fallback_flow_id)
-        if flow is None or flow.tenant_id != tenant_id:
+        if not flow_matches_channel(flow, tenant_id, channel_connection_id):
             return None
         trigger = KeywordTrigger(
             tenant_id=tenant_id,
@@ -149,6 +172,7 @@ def handle_inbound(
     *,
     tenant_id: uuid.UUID,
     channel_type: str,
+    channel_connection_id: uuid.UUID | None = None,
     conversation: Conversation,
     contact: Contact,
     message: Message,
@@ -161,6 +185,10 @@ def handle_inbound(
     message.
     """
     try:
+        actual_channel = conversation.channel_connection_id
+        if channel_connection_id is not None and channel_connection_id != actual_channel:
+            return None
+        channel_connection_id = actual_channel
         text = (message.text or "").strip()
         if not text or message.direction != MessageDirection.INBOUND.value:
             return None
@@ -179,10 +207,14 @@ def handle_inbound(
         from app.services import flow_engine
         active = flow_engine.active_session_for(session, tenant_id, conversation.id)
         if active is not None:
-            if active.status == "waiting" and active.wait_kind == "reply":
-                msg_meta = getattr(message, "message_metadata", None)
-                flow_engine.capture_reply(session, active, text, metadata=msg_meta if isinstance(msg_meta, dict) else None)
-            return None
+            from app.models import Flow
+            if flow_matches_channel(session.get(Flow, active.flow_id), tenant_id, actual_channel):
+                if active.status == "waiting" and active.wait_kind == "reply":
+                    msg_meta = getattr(message, "message_metadata", None)
+                    flow_engine.capture_reply(session, active, text, metadata=msg_meta if isinstance(msg_meta, dict) else None)
+                return None
+            active.status = "failed"
+            active.detail = "Flow is not assigned to this conversation channel."
 
         # Idempotency guard (belt-and-braces with the unique constraint).
         existing = session.execute(
@@ -194,11 +226,12 @@ def handle_inbound(
         if existing is not None:
             return existing
 
-        keyword = find_matching_keyword(session, tenant_id, text)
+        keyword = find_matching_keyword(session, tenant_id, text, channel_connection_id=channel_connection_id)
         if keyword is None:
             # No keyword matched: apply the tenant's global fallback routing.
             return _global_fallback_trigger(
                 session, tenant_id=tenant_id, channel_type=channel_type,
+                channel_connection_id=channel_connection_id,
                 conversation=conversation, contact=contact, message=message,
             )
 

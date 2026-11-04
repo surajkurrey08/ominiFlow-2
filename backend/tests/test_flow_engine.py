@@ -29,7 +29,7 @@ class FlowEngineTests(InboxTestCase):
         return self.auth(self.owner, self.tenant_a)
 
     def make_flow_graph(self, nodes, edges, name="Graph"):
-        created = self.client.post("/api/v1/flows", headers=self.head(), json={"name": name, "channels": ["whatsapp"]})
+        created = self.client.post("/api/v1/flows", headers=self.head(), json={"channel_connection_id": str(self.wa_a.id), "name": name, "channels": ["whatsapp"]})
         self.assertEqual(created.status_code, 201, created.text)
         fid = created.json()["id"]
         up = self.client.patch(f"/api/v1/flows/{fid}", headers=self.head(), json={"nodes": nodes, "edges": edges})
@@ -37,7 +37,7 @@ class FlowEngineTests(InboxTestCase):
         return fid
 
     def make_keyword(self, text, flow_id, match_type="exact"):
-        r = self.client.post("/api/v1/keywords", headers=self.head(), json={
+        r = self.client.post("/api/v1/keywords", headers=self.head(), json={"channel_connection_id": str(self.wa_a.id),
             "keyword_text": text, "match_type": match_type, "flow_id": flow_id, "is_active": True,
         })
         self.assertEqual(r.status_code, 201, r.text)
@@ -164,14 +164,14 @@ class FlowEngineTests(InboxTestCase):
         self.assertEqual(self.session().status, "completed")
 
     # ---- global fallback routing ----
-    def test_global_fallback_flow(self):
+    def test_channel_fallback_flow(self):
         nodes = [{"id": "start", "type": "message", "position": {"x": 0, "y": 0}, "data": {
             "isStart": True, "messageType": "text", "message": "Fallback hello",
         }}]
         fid = self.make_flow_graph(nodes, [], "Fallback")
         r = self.client.put(
             "/api/v1/routing-config", headers=self.head(),
-            json={"fallback_action": "flow", "fallback_flow_id": fid},
+            json={"channel_connection_id": str(self.wa_a.id), "fallback_action": "flow", "fallback_flow_id": fid},
         )
         self.assertEqual(r.status_code, 200, r.text)
 
@@ -180,7 +180,7 @@ class FlowEngineTests(InboxTestCase):
         self.pump()
         self.assertIn("Fallback hello", self.sent_texts())
 
-    def test_global_fallback_ai_reply(self):
+    def test_channel_fallback_ai_reply(self):
         from unittest.mock import patch
         from app.models import CreditUsage, TenantAiCredit
         from app.services import payment_service
@@ -191,7 +191,7 @@ class FlowEngineTests(InboxTestCase):
 
         r = self.client.put(
             "/api/v1/routing-config", headers=self.head(),
-            json={"fallback_action": "ai"},
+            json={"channel_connection_id": str(self.wa_a.id), "fallback_action": "ai"},
         )
         self.assertEqual(r.status_code, 200, r.text)
 

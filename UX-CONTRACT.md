@@ -24,6 +24,7 @@ The latest user-supplied three-column screenshot establishes the reference match
 | Template management | TemplatesClient / PlatformTemplateLibrary | Existing templates browser clients and backend template APIs | Library draft/submit, saved list/filter/sync/delete | Isolated browser fixture and template proxy tests |
 | Select/Listbox | Native controls in Inbox and Templates | Existing options and handlers; platform-owned popup | Filters, assignee, status, template category/channel | Browser keyboard and open-popup checks |
 | Form | Existing Inbox, Templates and Web Chat handlers | inbox-client.tsx, TemplatesClient, PlatformTemplateLibrary and WebChatSetupDialog | Reply, template samples, library admin, AI drafts and website setup | Existing tests and isolated browser fixture |
+| Channel routing | ChannelConnectionSelect and flow/keyword forms | channel_scope_service plus validated actual connection IDs | Create, assign legacy flow, filter list, select same-channel flow | Channel isolation DB tests, proxy tests and synthetic browser fixture |
 | Scrollbar | frontend/src/app/globals.css | DESIGN.md and scoped inbox CSS | Conversation list, history, inspector | Overflow measurements and browser screenshots |
 | Toast | Existing inline live regions | Inbox errors and status feedback | Loading, error, connection state | Failure and loading preview |
 | CRUD | frontend/src/lib/api/inbox.ts and existing Contacts/Tags browser clients | Backend conversation and outbound contracts | Read, reply, assignment, status, mode | Existing inbox tests; fixture interactions |
@@ -61,6 +62,18 @@ older page retains the visible message position. Customer text is displayed as
 stored; this presentation change does not rewrite message data.
 
 ## Mutations and recovery
+
+Flow and keyword creation require an actual channel connection in the owning
+workspace. No channel is automatically selected. Keyword flow choices exclude
+other channels and unassigned flows, including when they share a provider type.
+Changing a keyword channel resets the flow choice. The backend validates the
+same invariant independently of the browser and again before queued delivery,
+flow start and resume. A channel's missing keyword/default never inherits an
+unassigned global rule. Older content remains unassigned without automatic data
+creation or reassignment. Binding an existing flow happens explicitly in its
+builder; active or referenced flows cannot be silently moved to another channel.
+Channel select geometry and keyboard behavior remain native. Shared loading,
+error, retry, focus containment and Escape conventions apply to both forms.
 
 Retain the existing send guards, idempotency keys and uncertain-send protection.
 Retry still requires an explicit confirmation after checking message delivery;

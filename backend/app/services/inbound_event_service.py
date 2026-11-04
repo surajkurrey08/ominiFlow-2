@@ -105,6 +105,7 @@ def process_inbound_event(
         db,
         tenant_id=event.tenant_id,
         channel_type=event.channel_type,
+        channel_connection_id=event.channel_connection_id,
         conversation=conversation,
         contact=contact,
         message=created,

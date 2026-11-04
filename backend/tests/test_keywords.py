@@ -26,13 +26,13 @@ class KeywordCrudTests(InboxTestCase):
         return self.auth(actor or self.owner, tenant or self.tenant_a)
 
     def make_flow(self, name="Welcome Flow", tenant=None, actor=None):
-        r = self.client.post("/api/v1/flows", headers=self.head(actor, tenant), json={"name": name, "channels": ["whatsapp"]})
+        r = self.client.post("/api/v1/flows", headers=self.head(actor, tenant), json={"channel_connection_id": str(self.wa_b.id if tenant and tenant.id == self.tenant_b.id else self.wa_a.id), "name": name, "channels": ["whatsapp"]})
         self.assertEqual(r.status_code, 201, r.text)
         return r.json()["id"]
 
     def test_crud_and_flow_name(self):
         flow_id = self.make_flow("Pricing Flow")
-        created = self.client.post("/api/v1/keywords", headers=self.head(), json={
+        created = self.client.post("/api/v1/keywords", headers=self.head(), json={"channel_connection_id": str(self.wa_a.id),
             "keyword_text": "price", "match_type": "contains", "flow_id": flow_id, "is_active": True,
         })
         self.assertEqual(created.status_code, 201, created.text)
@@ -53,24 +53,24 @@ class KeywordCrudTests(InboxTestCase):
         self.assertEqual(gone.status_code, 404)
 
     def test_ends_with_match_type_accepted(self):
-        r = self.client.post("/api/v1/keywords", headers=self.head(), json={"keyword_text": "bye", "match_type": "ends_with"})
+        r = self.client.post("/api/v1/keywords", headers=self.head(), json={"channel_connection_id": str(self.wa_a.id), "keyword_text": "bye", "match_type": "ends_with"})
         self.assertEqual(r.status_code, 201, r.text)
 
     def test_rejects_cross_tenant_flow(self):
         other_flow = self.make_flow("Tenant B Flow", tenant=self.tenant_b, actor=self.owner_b)
-        r = self.client.post("/api/v1/keywords", headers=self.head(), json={
+        r = self.client.post("/api/v1/keywords", headers=self.head(), json={"channel_connection_id": str(self.wa_a.id),
             "keyword_text": "hi", "match_type": "exact", "flow_id": other_flow,
         })
         self.assertEqual(r.status_code, 400, r.text)
 
     def test_tenant_isolation_list(self):
-        self.client.post("/api/v1/keywords", headers=self.head(), json={"keyword_text": "only-a", "match_type": "exact"})
+        self.client.post("/api/v1/keywords", headers=self.head(), json={"channel_connection_id": str(self.wa_a.id), "keyword_text": "only-a", "match_type": "exact"})
         b_list = self.client.get("/api/v1/keywords", headers=self.head(self.owner_b, self.tenant_b)).json()
         self.assertFalse(any(k["keyword_text"] == "only-a" for k in b_list))
 
     def test_duplicate_rejected(self):
-        self.client.post("/api/v1/keywords", headers=self.head(), json={"keyword_text": "dup", "match_type": "exact"})
-        again = self.client.post("/api/v1/keywords", headers=self.head(), json={"keyword_text": "dup", "match_type": "exact"})
+        self.client.post("/api/v1/keywords", headers=self.head(), json={"channel_connection_id": str(self.wa_a.id), "keyword_text": "dup", "match_type": "exact"})
+        again = self.client.post("/api/v1/keywords", headers=self.head(), json={"channel_connection_id": str(self.wa_a.id), "keyword_text": "dup", "match_type": "exact"})
         self.assertEqual(again.status_code, 400)
 
 
@@ -98,11 +98,11 @@ class KeywordTriggerTests(InboxTestCase):
         return self.auth(self.owner, self.tenant_a)
 
     def make_flow(self, name="Trigger Flow"):
-        r = self.client.post("/api/v1/flows", headers=self.head(), json={"name": name, "channels": ["whatsapp"]})
+        r = self.client.post("/api/v1/flows", headers=self.head(), json={"channel_connection_id": str(self.wa_a.id), "name": name, "channels": ["whatsapp"]})
         return r.json()["id"]
 
     def make_keyword(self, text, match_type="contains", flow_id=None, is_active=True, reply_text=None):
-        r = self.client.post("/api/v1/keywords", headers=self.head(), json={
+        r = self.client.post("/api/v1/keywords", headers=self.head(), json={"channel_connection_id": str(self.wa_a.id),
             "keyword_text": text, "match_type": match_type, "flow_id": flow_id,
             "is_active": is_active, "reply_text": reply_text,
         })

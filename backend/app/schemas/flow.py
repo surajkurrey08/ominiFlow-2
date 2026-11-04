@@ -6,11 +6,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.flow import FlowStatus
 
-VALID_CHANNELS = ("omnichannel", "whatsapp", "instagram", "messenger")
+VALID_CHANNELS = ("omnichannel", "whatsapp", "instagram", "messenger", "web_chat")
 
 
 class FlowCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
+    channel_connection_id: UUID
     channels: list[str] = Field(default_factory=list, max_length=4)
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -22,6 +23,7 @@ class FlowCreate(BaseModel):
 
 
 class FlowUpdate(BaseModel):
+    channel_connection_id: UUID | None = None
     name: str | None = Field(default=None, min_length=1, max_length=150)
     status: FlowStatus | None = None
     channels: list[str] | None = Field(default=None, max_length=4)
@@ -43,6 +45,7 @@ class FlowResponse(BaseModel):
     name: str
     status: FlowStatus
     channels: list[str]
+    channel_connection_id: UUID | None
     nodes: list[dict[str, Any]]
     edges: list[dict[str, Any]]
     created_by_user_id: UUID | None
@@ -58,6 +61,7 @@ class FlowSummary(BaseModel):
     name: str
     status: FlowStatus
     channels: list[str]
+    channel_connection_id: UUID | None
     created_at: datetime
     updated_at: datetime
     model_config = ConfigDict(from_attributes=True)

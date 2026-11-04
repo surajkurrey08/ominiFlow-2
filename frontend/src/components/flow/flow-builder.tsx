@@ -3,6 +3,7 @@
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ChannelConnectionSelect, useChannelConnections } from "@/components/channels/channel-connection-select";
 import {
   ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Panel,
   addEdge, useNodesState, useEdgesState, useReactFlow,
@@ -137,6 +138,8 @@ function BuilderInner({ flowId }: { flowId: string }) {
   const router = useRouter();
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const [name, setName] = useState("");
+  const [channelId, setChannelId] = useState("");
+  const channelCatalog = useChannelConnections();
   const [status, setStatus] = useState<"draft" | "active">("draft");
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -166,6 +169,7 @@ function BuilderInner({ flowId }: { flowId: string }) {
     flowsApi.get(flowId)
       .then((f) => {
         setName(f.name);
+        setChannelId(f.channel_connection_id ?? "");
         setStatus(f.status);
         setNodes((f.nodes ?? []) as unknown as Node[]);
         setEdges((f.edges ?? []) as unknown as Edge[]);
@@ -207,6 +211,7 @@ function BuilderInner({ flowId }: { flowId: string }) {
     try {
       const f = await flowsApi.get(flowId);
       setName(f.name);
+        setChannelId(f.channel_connection_id ?? "");
       setStatus(f.status);
       setNodes((f.nodes ?? []) as unknown as Node[]);
       setEdges((f.edges ?? []) as unknown as Edge[]);
@@ -419,9 +424,11 @@ function BuilderInner({ flowId }: { flowId: string }) {
   }, [setNodes, setEdges]);
 
   async function save() {
+    if (saving) return;
+    if (!channelId) { setError("Select a channel before saving this flow."); document.getElementById("builder-channel")?.focus(); return; }
     setSaving(true);
     try {
-      await flowsApi.update(flowId, { name: name.trim() || "Untitled flow", nodes: sanitize(nodesRef.current), edges: sanitizeEdges(edgesRef.current) });
+      await flowsApi.update(flowId, { name: name.trim() || "Untitled flow", channel_connection_id: channelId, nodes: sanitize(nodesRef.current), edges: sanitizeEdges(edgesRef.current) });
       setToast("Saved successfully");
       setTimeout(() => setToast(""), 2000);
     } catch (e) {
@@ -434,6 +441,7 @@ function BuilderInner({ flowId }: { flowId: string }) {
 
   async function toggleStatus() {
     const next = status === "active" ? "draft" : "active";
+    if (next === "active" && !channelId) { setError("Select a channel before activating this flow."); document.getElementById("builder-channel")?.focus(); return; }
     if (next === "active") {
       const check = validateFlow(nodesRef.current, edgesRef.current);
       if (!check.valid) {
@@ -445,7 +453,7 @@ function BuilderInner({ flowId }: { flowId: string }) {
     }
     setError("");
     try {
-      await flowsApi.update(flowId, { status: next });
+      await flowsApi.update(flowId, { status: next, ...(channelId ? { channel_connection_id: channelId } : {}) });
       setStatus(next);
       setToast(next === "active" ? "Flow activated" : "Flow set to draft");
       setTimeout(() => setToast(""), 2000);
@@ -538,6 +546,12 @@ function BuilderInner({ flowId }: { flowId: string }) {
               {saving ? "Saving..." : "Save"}
             </button>
           </div>
+        </div>
+
+        <div className="flow-channel-toolbar">
+          <ChannelConnectionSelect id="builder-channel" value={channelId} onChange={setChannelId} catalog={channelCatalog} disabled={saving || status === "active"} />
+          {!channelId && <p role="status">Assign this existing flow to its channel before using it. Existing content is preserved.</p>}
+          {status === "active" && <p>Set the flow to draft to change its channel.</p>}
         </div>
 
         {error && <p role="alert" className="bg-rose-50 border-b border-rose-200 px-4 py-2 text-xs font-semibold text-rose-800">{error}</p>}

@@ -23,8 +23,8 @@ _EXT = re.compile(r"[^a-z0-9]")
 
 
 @router.get("", response_model=FlowListResponse)
-def list_flows(tenant: CurrentTenant, db: DbSession, skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100), search: str | None = None):
-    items, total = flow_service.list_flows(db, tenant.id, skip, limit, (search or "").strip() or None)
+def list_flows(tenant: CurrentTenant, db: DbSession, skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100), search: str | None = None, channel_connection_id: uuid.UUID | None = None):
+    items, total = flow_service.list_flows(db, tenant.id, skip, limit, (search or "").strip() or None, channel_connection_id)
     return {"items": items, "total": total}
 
 

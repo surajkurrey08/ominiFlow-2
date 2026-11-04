@@ -13,11 +13,12 @@ class KeywordBase(BaseModel):
     is_active: bool = True
     flow_id: uuid.UUID | None = None
     reply_text: str | None = Field(default=None, max_length=4096)
-    model_config = ConfigDict(str_strip_whitespace=True)
+    channel_connection_id: uuid.UUID | None = None
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
 
 class KeywordCreate(KeywordBase):
-    pass
+    channel_connection_id: uuid.UUID
 
 
 class KeywordUpdate(BaseModel):
@@ -26,13 +27,15 @@ class KeywordUpdate(BaseModel):
     is_active: bool | None = None
     flow_id: uuid.UUID | None = None
     reply_text: str | None = Field(default=None, max_length=4096)
-    model_config = ConfigDict(str_strip_whitespace=True)
+    channel_connection_id: uuid.UUID | None = None
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
 
 class KeywordResponse(KeywordBase):
     id: uuid.UUID
     tenant_id: uuid.UUID
     flow_name: str | None = None
+    channel_name: str | None = None
     created_at: datetime
     updated_at: datetime
     created_by_user_id: uuid.UUID | None = None

@@ -31,6 +31,7 @@ export interface FlowSummary {
   name: string;
   status: FlowStatus;
   channels: string[];
+  channel_connection_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -48,6 +49,7 @@ export const CHANNEL_TYPES: { value: string; label: string }[] = [
   { value: "messenger", label: "Messenger" },
   { value: "instagram", label: "Instagram" },
   { value: "omnichannel", label: "OmniChannel" },
+  { value: "web_chat", label: "Web Chat" },
 ];
 
 export const CREATE_CHANNELS: { value: string; label: string }[] = [
@@ -101,12 +103,24 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const flowsApi = {
-  list: (search?: string) =>
-    api<FlowListResponse>(`/api/flows${search ? `?search=${encodeURIComponent(search)}` : ""}`),
+  list: async (search?: string, channelId?: string) => {
+    const items: FlowSummary[] = [];
+    let total = 0;
+    do {
+      const params = new URLSearchParams({ skip: String(items.length), limit: "100" });
+      if (search) params.set("search", search);
+      if (channelId) params.set("channel_connection_id", channelId);
+      const result = await api<FlowListResponse>(`/api/flows?${params}`);
+      total = result.total;
+      items.push(...result.items);
+      if (!result.items.length) break;
+    } while (items.length < total);
+    return { items, total };
+  },
   get: (id: string) => api<Flow>(`/api/flows/${id}`),
-  create: (name: string, channels: string[]) =>
-    api<Flow>("/api/flows", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, channels }) }),
-  update: (id: string, body: Partial<Pick<Flow, "name" | "status" | "channels" | "nodes" | "edges">>) =>
+  create: (name: string, channelId: string) =>
+    api<Flow>("/api/flows", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, channel_connection_id: channelId }) }),
+  update: (id: string, body: Partial<Pick<Flow, "name" | "status" | "channels" | "channel_connection_id" | "nodes" | "edges">>) =>
     api<Flow>(`/api/flows/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
   remove: (id: string) => api<void>(`/api/flows/${id}`, { method: "DELETE" }),
   copy: (id: string) => api<Flow>(`/api/flows/${id}/copy`, { method: "POST" }),

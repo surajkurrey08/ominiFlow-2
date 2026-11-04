@@ -23,6 +23,7 @@ from app.models.keyword_trigger import KeywordTriggerAction, KeywordTriggerStatu
 from app.schemas.message import TextMessageCreate
 from app.services import flow_engine, outbound_message_service
 from app.services.outbound_message_service import OutboundMessageError
+from app.services.channel_scope_service import flow_matches_channel
 
 logger = logging.getLogger("app.services.flow_runner")
 
@@ -144,9 +145,30 @@ def deliver_trigger(db: Session, trigger: KeywordTrigger) -> bool:
     """
     # A global-fallback trigger has no keyword.
     keyword = db.get(Keyword, trigger.keyword_id) if trigger.keyword_id else None
+    conversation = db.get(Conversation, trigger.conversation_id)
+    if conversation is None or conversation.tenant_id != trigger.tenant_id:
+        trigger.status = KeywordTriggerStatus.SKIPPED.value
+        trigger.detail = "Conversation unavailable for this workspace."
+        return False
+    if keyword is not None and (keyword.tenant_id != trigger.tenant_id or keyword.channel_connection_id != conversation.channel_connection_id):
+        trigger.status = KeywordTriggerStatus.SKIPPED.value
+        trigger.detail = "Keyword is not assigned to this conversation channel."
+        return False
+    if trigger.flow_id and not flow_matches_channel(db.get(Flow, trigger.flow_id), trigger.tenant_id, conversation.channel_connection_id):
+        trigger.status = KeywordTriggerStatus.SKIPPED.value
+        trigger.detail = "Flow is not assigned to this conversation channel."
+        return False
 
     # Global AI fallback: generate an AI reply and charge credits.
     if trigger.action == KeywordTriggerAction.AI_REPLY.value:
+        from app.models import TenantRoutingConfig
+        if not db.query(TenantRoutingConfig).filter_by(
+            tenant_id=trigger.tenant_id, channel_connection_id=conversation.channel_connection_id,
+            fallback_action="ai",
+        ).first():
+            trigger.status = KeywordTriggerStatus.SKIPPED.value
+            trigger.detail = "AI fallback is not enabled for this conversation channel."
+            return False
         return _deliver_ai_reply(db, trigger)
 
     # A selected flow with runnable content runs through the stateful engine.

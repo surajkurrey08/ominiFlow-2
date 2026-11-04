@@ -44,7 +44,7 @@ class CompleteFlowElementsTest(InboxTestCase):
 
     def make_flow(self, nodes, edges, name="CompleteFlow", tenant=None):
         auth_head = self.auth(self.owner, tenant or self.tenant_a)
-        res = self.client.post("/api/v1/flows", headers=auth_head, json={"name": name, "channels": ["whatsapp"]})
+        res = self.client.post("/api/v1/flows", headers=auth_head, json={"channel_connection_id": str(self.wa_a.id), "name": name, "channels": ["whatsapp"]})
         self.assertEqual(res.status_code, 201, res.text)
         fid = res.json()["id"]
         res2 = self.client.patch(f"/api/v1/flows/{fid}", headers=auth_head, json={"nodes": nodes, "edges": edges})
@@ -52,7 +52,7 @@ class CompleteFlowElementsTest(InboxTestCase):
         return fid
 
     def make_kw(self, text, fid, match_type="contains"):
-        r = self.client.post("/api/v1/keywords", headers=self.head(), json={
+        r = self.client.post("/api/v1/keywords", headers=self.head(), json={"channel_connection_id": str(self.wa_a.id),
             "keyword_text": text, "match_type": match_type, "flow_id": fid, "is_active": True,
         })
         self.assertEqual(r.status_code, 201)
