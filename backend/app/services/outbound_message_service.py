@@ -27,6 +27,7 @@ from app.integrations.base import (
 from app.integrations.registry import get_provider
 from app.models import (
     ChannelConnection,
+    ChannelType,
     ChannelStatus,
     Contact,
     Conversation,

@@ -162,6 +162,31 @@ class OutboundTests(WebChatTestCase):
         self.assertIn(("agent", "Happy to help!"), texts)
 
 
+    def test_widget_receives_interactive_buttons_and_list_choices(self):
+        for kind, options in [
+            ("button", {"buttons": [{"id": "book", "title": "Book villa"}]}),
+            ("list", {"interactive_type": "list", "button_text": "Choose", "list_items": [{"id": "weekend", "title": "Weekend stay"}]}),
+        ]:
+            with self.subTest(kind=kind):
+                _, public_key = self.create_web_chat_channel()
+                visitor = f"visitor-{kind}"
+                self.inbound(public_key, visitor, "Show options")
+                conversation = self._conversation_for(visitor)
+                headers = self.headers(self.agent)
+                headers["Idempotency-Key"] = str(uuid.uuid4())
+                sent = self.client.post(
+                    f"/api/v1/conversations/{conversation.id}/messages", headers=headers,
+                    json={"type": "interactive", "body": "Choose your stay", **options},
+                )
+                self.assertEqual(sent.status_code, 201, sent.text)
+                poll = self.client.get(f"/api/v1/web-chat/{public_key}/messages", params={"visitor_id": visitor})
+                self.assertEqual(poll.status_code, 200)
+                reply = next(m for m in poll.json()["messages"] if m["direction"] == "agent")
+                choices = options.get("buttons", options.get("list_items"))
+                self.assertEqual(reply["buttons"], [{"id": choice["id"], "title": choice["title"]} for choice in choices])
+                self.assertEqual(self.send_api.requests, [])
+
+
 # NOTE: The old flow-graph automation auto-reply test was removed when the
 # node/edge automation engine was replaced. Inbound keyword → flow triggering
 # (which covers Web Chat through the same channel-neutral boundary) is tested

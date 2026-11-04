@@ -230,8 +230,8 @@ def _to_out(message: Message) -> WebChatMessageOut:
     # replies as outbound->"agent".
     direction = "agent" if message.direction == MessageDirection.OUTBOUND else "visitor"
     buttons: list[dict[str, str]] = []
-    if message.metadata and isinstance(message.metadata, dict):
-        interactive = message.metadata.get("interactive") or {}
+    if message.message_metadata and isinstance(message.message_metadata, dict):
+        interactive = message.message_metadata.get("interactive") or {}
         for b in interactive.get("buttons") or []:
             if isinstance(b, dict) and b.get("title"):
                 buttons.append({"id": str(b.get("id") or b["title"]), "title": str(b["title"])})
