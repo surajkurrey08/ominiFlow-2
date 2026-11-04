@@ -50,6 +50,59 @@ class WebsitePairingTests(InboxTestCase):
         self.assertEqual(a["provider_metadata"]["web_chat"]["website_origin"], "http://localhost:5173")
         self.assertEqual(self.installation(a)["installation_status"], "not_connected")
 
+    def test_manual_settings_are_stable_and_do_not_start_authorization(self):
+        channel = self.setup_site()
+        path = f"/api/v1/channels/{channel['id']}/web-chat/widget-settings"
+        before = self.db.query(WebChatPairing).count()
+        for _ in range(2):
+            response = self.client.get(path, headers=self.auth(self.owner, self.tenant_a))
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.headers.get("cache-control"), "no-store")
+            self.assertEqual(response.json(), {
+                "channel_id": channel["id"], "frontend_url": "http://localhost:3000",
+                "backend_url": "http://localhost:8000", "public_key": channel["external_account_id"],
+            })
+        self.assertEqual(self.db.query(WebChatPairing).count(), before)
+        self.assertIsNone(self.installation(channel)["pairing_id"])
+
+    def test_manual_settings_require_auth_and_tenant_ownership(self):
+        channel = self.setup_site()
+        path = f"/api/v1/channels/{channel['id']}/web-chat/widget-settings"
+        self.assertEqual(self.client.get(path).status_code, 401)
+        self.assertEqual(self.client.get(path, headers=self.auth(self.owner_b, self.tenant_b)).status_code, 404)
+
+    def test_manual_live_settings_require_public_urls_without_api_prefix(self):
+        channel = self.setup_site("https://bookmyvilla.online")
+        path = f"/api/v1/channels/{channel['id']}/web-chat/widget-settings"
+        headers = self.auth(self.owner, self.tenant_a)
+        self.assertEqual(self.client.get(path, headers=headers).status_code, 422)
+        settings.web_chat_public_frontend_url = "https://fmfilms.in/"
+        settings.web_chat_public_backend_url = "https://fmfilms.in/"
+        response = self.client.get(path, headers=headers)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["frontend_url"], "https://fmfilms.in")
+        self.assertEqual(response.json()["backend_url"], "https://fmfilms.in")
+        settings.web_chat_public_backend_url = "https://fmfilms.in/api/v1"
+        self.assertEqual(self.client.get(path, headers=headers).status_code, 422)
+
+    def test_manual_visitor_delivery_is_active_without_pairing(self):
+        channel = self.setup_site()
+        self.assertEqual(self.installation(channel)["installation_status"], "not_connected")
+        message = self.client.post(f"/api/v1/web-chat/{channel['external_account_id']}/messages",
+                                   json={"visitor_id": "manual-plugin-visitor", "text": "Hello from my website"})
+        self.assertEqual(message.status_code, 201, message.text)
+        status = self.installation(channel)
+        self.assertEqual(status["installation_status"], "active")
+        self.assertIsNone(status["paired_at"])
+        self.assertIsNone(status["pairing_id"])
+
+    def test_old_popup_request_does_not_hide_manual_visitor_delivery(self):
+        channel = self.setup_site()
+        self.assertEqual(self.start_pairing(channel).status_code, 200)
+        self.assertEqual(self.client.post(f"/api/v1/web-chat/{channel['external_account_id']}/messages",
+                                         json={"visitor_id": "manual-after-popup", "text": "Hello"}).status_code, 201)
+        self.assertEqual(self.installation(channel)["installation_status"], "active")
+
     def test_setup_and_handoff_are_permission_and_tenant_scoped(self):
         self.assertEqual(self.client.post("/api/v1/channels/web-chat/setup", headers=self.auth(self.viewer, self.tenant_a), json={"name": "Site", "website_url": "http://localhost:5173"}).status_code, 403)
         channel = self.setup_site()

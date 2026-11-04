@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api.dependencies import CurrentTenant, CurrentUser, DbSession, require_permission
 from app.schemas.web_chat_pairing import (
     WebChatSetupRequest, WebChatPairingStart, WebChatPairingComplete, WebChatPairingCancel,
-    WebChatPairingResponse, WebChatInstallationResponse,
+    WebChatPairingResponse, WebChatInstallationResponse, WebChatWidgetSettings,
 )
 from app.services import web_chat_pairing_service as pairing_service
 from app.schemas.channel import ChannelConnectionResponse
@@ -84,6 +84,14 @@ def start_web_chat_pairing(channel_id: uuid.UUID, data: WebChatPairingStart, ten
 def web_chat_installation(channel_id: uuid.UUID, tenant: CurrentTenant, db: DbSession):
     with _handle_errors():
         return pairing_service.installation(db, tenant.id, channel_id)
+
+
+@router.get("/channels/{channel_id}/web-chat/widget-settings", response_model=WebChatWidgetSettings,
+            dependencies=[Depends(require_permission("channel:read"))])
+def web_chat_widget_settings(channel_id: uuid.UUID, tenant: CurrentTenant, db: DbSession, response: Response):
+    with _handle_errors():
+        response.headers["Cache-Control"] = "no-store"
+        return pairing_service.widget_settings(db, tenant.id, channel_id)
 
 
 @router.post("/channels/{channel_id}/web-chat/pairing/cancel", response_model=WebChatInstallationResponse,

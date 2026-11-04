@@ -20,7 +20,7 @@ The latest user-supplied three-column screenshot establishes the reference match
 |---|---|---|---|---|
 | Navigation | Shared AppShell | app-shell.tsx and shared workspace CSS | Active route, desktop collapse, mobile drawer, account disclosure | Cross-route browser comparison and narrow navigation |
 | Modal | AppDialog | Native dialog with shared CSS | Template preview, sync, delete confirmation, AI generator and website connection | Focus, Escape, scroll and return-focus browser checks |
-| Website pairing | WebChatSetupDialog / channels browser client | Tenant-scoped web_chat_pairing_service and connector protocol | Create website channel, connect existing channel, authorization, activity check | Pairing DB tests, channel allowlist tests and isolated cross-origin browser verification |
+| Website setup | WebChatSetupDialog / channels browser client | Tenant-scoped web_chat_pairing_service and public platform configuration | Create website channel, copy plugin values, reopen settings, check activity | Backend setup/settings tests, channel proxy tests and isolated browser workflow |
 | Template management | TemplatesClient / PlatformTemplateLibrary | Existing templates browser clients and backend template APIs | Library draft/submit, saved list/filter/sync/delete | Isolated browser fixture and template proxy tests |
 | Select/Listbox | Native controls in Inbox and Templates | Existing options and handlers; platform-owned popup | Filters, assignee, status, template category/channel | Browser keyboard and open-popup checks |
 | Form | Existing Inbox, Templates and Web Chat handlers | inbox-client.tsx, TemplatesClient, PlatformTemplateLibrary and WebChatSetupDialog | Reply, template samples, library admin, AI drafts and website setup | Existing tests and isolated browser fixture |
@@ -91,14 +91,16 @@ edit the draft. Avatar initials represent missing photos honestly.
 
 Website connections remain on Channels and use AppDialog with a website name and
 origin form. Validation preserves inputs and focuses the first invalid field.
-Only tenant-authorized channel managers can start or cancel a handoff. Cancellation
-targets the exact request, so closing an older window cannot cancel a newer one.
-The configured website first announces its admin origin from the same popup;
-every later message is checked against that origin, popup and request ID. A popup
-message never authorizes an installation by itself: the panel polls the server.
-Readiness, awaiting approval, authorization and actual stored visitor activity
-have distinct labels. Missing connector, public service configuration, blocked
-popup, expiry and closed-window states preserve a clear retry/cancel path.
+After saving, display the existing channel key immediately and load platform URLs
+through the authenticated widget-settings endpoint. Reading/copying settings never
+generates a pairing token, opens a popup, rotates the key or requires approval.
+Only channel readers in the owning tenant can retrieve plugin configuration.
+Copy feedback never repeats values; denied clipboard access selects the visible
+field for manual copying. URL failures preserve the created channel/key and offer
+retry instead of requiring another channel creation. Escape and Close return focus.
+Check chat activity reads persisted visitor messages; manual installation becomes
+Active without a pairing receipt once a visitor message arrives. Existing pairing
+endpoints remain compatible, but are not part of this user-requested setup flow.
 
 Top search, refresh, sync, filters and both creation shortcuts appear before the
 Library / My templates view switch. Switching

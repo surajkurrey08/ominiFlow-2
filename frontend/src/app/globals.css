@@ -1079,7 +1079,7 @@ button, a, input { -webkit-tap-highlight-color: transparent; }
 .app-dialog:has(.channel-modal-sm) { width: min(420px, calc(100% - 32px)); }
 .app-dialog :where(button, a, select) { cursor: pointer; }
 
-/* Website pairing uses the shared channel controls and AppDialog. */
+/* Website plugin setup uses the shared channel controls and AppDialog. */
 .web-chat-setup-dialog { --website-accent: var(--workspace-accent, #6017ff); }
 .web-chat-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .web-chat-dialog-heading > button { min-width: 36px; font-size: 22px; }
@@ -1088,6 +1088,17 @@ button, a, input { -webkit-tap-highlight-color: transparent; }
 .web-chat-card-installation :where(button, summary):focus-visible { outline: 2px solid var(--workspace-accent, #6017ff); outline-offset: 3px; }
 .web-chat-connect-state { display: grid; gap: 16px; margin-top: 20px; }
 .web-chat-connect-state .channel-modal-sub { margin: 0; }
+.web-chat-copy-setting { display: grid; gap: 6px; min-width: 0; }
+.web-chat-copy-setting > label { font-size: 13px; font-weight: 600; color: #171426; }
+.web-chat-copy-controls { display: flex; gap: 8px; min-width: 0; }
+.web-chat-copy-controls input { width: 100%; min-width: 0; flex: 1; border: 1px solid #e9e8f5; border-radius: 11px; padding: 10px 12px; background: #fcfbff; color: #171426; font-size: 13px; }
+.web-chat-copy-controls button { min-height: 40px; padding: 8px 12px; flex-shrink: 0; }
+.web-chat-copy-feedback { min-height: 18px; margin: 0; font-size: 12px; line-height: 1.5; color: #62617a; }
+@media (max-width: 480px) {
+  .web-chat-copy-controls { flex-wrap: wrap; }
+  .web-chat-copy-controls input { flex-basis: 100%; }
+}
+
 .web-chat-website-summary { display: grid; gap: 4px; border: 1px solid #e9e8f5; background: #fcfbff; border-radius: 11px; padding: 14px; overflow-wrap: anywhere; }
 .web-chat-website-summary > span { font-size: 13px; color: #62617a; }
 .web-chat-installation-details { display: grid; gap: 12px; font-size: 13px; }

@@ -25,6 +25,14 @@ const id = "123e4567-e89b-42d3-a456-426614174000";
 const params = (q = "") => new URLSearchParams(q);
 
 describe("Channel proxy allowlist", () => {
+  it("reads manual widget settings without allowing writes or tenant overrides", () => {
+    const segments = [id, "web-chat", "widget-settings"];
+    assert.equal(buildChannelProxyTarget("GET", segments, params()).backendPath, `/channels/${id}/web-chat/widget-settings`);
+    for (const method of ["POST", "PATCH", "DELETE"]) assert.equal(buildChannelProxyTarget(method, segments, params(), {}), null);
+    assert.equal(buildChannelProxyTarget("GET", segments, params("tenant_id=other")), null);
+    assert.equal(buildChannelProxyTarget("GET", ["not-a-uuid", "web-chat", "widget-settings"], params()), null);
+    assert.equal(buildChannelProxyTarget("GET", [...segments, "private"], params()), null);
+  });
   it("allows website setup, pairing and status without forwarding private extras", () => {
     const setup = { name: "BookMyVilla", website_url: "https://bookmyvilla.online" };
     assert.equal(buildChannelProxyTarget("POST", ["web-chat", "setup"], params(), setup).backendPath, "/channels/web-chat/setup");

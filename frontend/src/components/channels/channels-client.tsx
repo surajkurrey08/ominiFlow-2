@@ -326,11 +326,6 @@ const PROVIDER_LABEL: Record<string, string> = {
   web_chat: "Web Chat",
 };
 
-function widgetSnippet(publicKey: string) {
-  const origin = typeof window !== "undefined" ? window.location.origin : "https://your-app";
-  return `<script src="${origin}/omniflow-webchat.js"\n        data-omniflow-key="${publicKey}"\n        data-omniflow-api="YOUR_OMNIFLOW_API_URL"></script>`;
-}
-
 const META_ID = /^[0-9]{1,32}$/;
 
 function formatTime(value: string | null | undefined) {
@@ -1128,7 +1123,7 @@ export function ChannelsClient() {
                     <strong>{channel.name}</strong>
                     <span>{PROVIDER_LABEL[channel.channel_type] ?? channel.channel_type}</span>
                   </div>
-                  <span className={`channel-pill ${meta.tone}`}>{isWebChat && isConnected ? (website?.paired_at ? "Authorized" : "Ready") : meta.label}</span>
+                  <span className={`channel-pill ${meta.tone}`}>{isWebChat && isConnected ? "Ready" : meta.label}</span>
                 </div>
 
                 <dl className="channel-facts">
@@ -1141,13 +1136,13 @@ export function ChannelsClient() {
                       )}
                     </dd>
                   </div>
-                  <div><dt>{isWebChat ? "Installation" : "Business ID"}</dt><dd>{isWebChat ? (website?.paired_at ? "Website admin approved" : "Authorization required") : channel.external_business_id ?? "—"}</dd></div>
+                  <div><dt>{isWebChat ? "Installation" : "Business ID"}</dt><dd>{isWebChat ? "Copy settings to website plugin" : channel.external_business_id ?? "—"}</dd></div>
                   {!isWebChat && <div><dt>Credentials</dt><dd>{channel.has_credentials ? "Stored (encrypted)" : "None"}</dd></div>}
                   <div><dt>{isWebChat ? "Channel enabled" : "Last connected"}</dt><dd>{formatTime(channel.last_connected_at)}</dd></div>
                   <div>
-                    <dt>{isWebChat ? "Website authorization" : "Webhook"}</dt>
+                    <dt>{isWebChat ? "Website plugin" : "Webhook"}</dt>
                     <dd>
-                      {isWebChat ? (website?.paired_at ? formatTime(website.paired_at) : "Connect the website plugin") : check
+                      {isWebChat ? "Open plugin settings to copy URLs and key" : check
                         ? check.webhook_subscribed === null
                           ? "Unknown"
                           : check.webhook_subscribed
@@ -1200,15 +1195,11 @@ export function ChannelsClient() {
 
                 {isWebChat && isConnected && (
                   <div className="web-chat-card-installation">
-                    <strong>{website?.paired_at ? "Website authorized" : "Connect your website"}</strong>
-                    <p>{website?.paired_at ? "Open setup to check chat activity or authorize again." : "Approve the connection in your website admin. Settings are filled automatically."}</p>
+                    <strong>Website plugin settings</strong>
+                    <p>Copy the Frontend URL, Backend URL and public widget key into your website admin.</p>
                     <button type="button" className="channel-action channel-action-primary" disabled={isBusy} onClick={() => setWebChatSetup({ channel })}>
-                      {website?.paired_at ? "Manage website" : "Connect website"}
+                      View plugin settings
                     </button>
-                    <details><summary>Manual widget installation</summary>
-                      <p>For websites without the connector, use the widget snippet with your public Omniflow service URL.</p>
-                      <pre>{widgetSnippet(channel.external_account_id ?? "")}</pre>
-                    </details>
                   </div>
                 )}
 

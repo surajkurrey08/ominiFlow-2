@@ -11,6 +11,13 @@ class WebChatSetupRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
+class WebChatWidgetSettings(BaseModel):
+    channel_id: uuid.UUID
+    frontend_url: str
+    backend_url: str
+    public_key: str
+
+
 class WebChatPairingStart(BaseModel):
     opener_origin: str = Field(min_length=8, max_length=2048)
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)

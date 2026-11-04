@@ -151,12 +151,14 @@ view; it does not claim a persisted conversation favorite.
 ## Do's and Don'ts
 
 Website connection uses the existing Channels controls and shared AppDialog.
-Create Web Chat collects a website name and origin, then opens a website admin
-authorization window. Service URLs and the widget key come from platform
-configuration; ordinary users never enter them. The website first identifies
-its configured admin origin before any handoff is sent. The modal distinguishes
-channel readiness, pending approval, website authorization and actual message
-activity. Manual embedding remains a secondary disclosure for older websites.
+Create Web Chat collects a website name and origin, then immediately displays
+Frontend URL, Backend URL and the generated Public widget key with Copy controls.
+Users paste these values into their website admin plugin and enable chat there.
+The public key is masked with a Show/Hide action; copying includes its full value.
+Service URLs come from platform configuration, never a guessed localhost address.
+The same settings reopen from each channel card without creating a new key.
+No authorization popup or connector route is required for this manual setup.
+Readiness and stored visitor activity remain distinct; copying is not delivery.
 
 - Do keep the message body and reply action visually dominant.
 - Do retain meaningful connection, delivery, failure and safety feedback.

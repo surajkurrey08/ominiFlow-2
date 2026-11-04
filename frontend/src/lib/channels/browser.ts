@@ -96,6 +96,17 @@ export interface WebChatInstallation {
   expires_at: string | null;
 }
 
+export interface WebChatWidgetSettings {
+  channel_id: string;
+  frontend_url: string;
+  backend_url: string;
+  public_key: string;
+}
+
+export function getWebChatWidgetSettings(channelId: string) {
+  return request<WebChatWidgetSettings>(`/${channelId}/web-chat/widget-settings`);
+}
+
 export function setupWebChat(input: { name: string; website_url: string }, channelId?: string) {
   return request<ChannelConnection>(channelId ? `/${channelId}/web-chat/website` : "/web-chat/setup", {
     method: channelId ? "PATCH" : "POST", body: input,

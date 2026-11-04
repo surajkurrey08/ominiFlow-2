@@ -258,6 +258,9 @@ export function buildChannelProxyTarget(
     if (segments.length === 3 && segments[2] === "installation" && method === "GET") {
       return { backendPath: `${path}/installation`, method: "GET", query: empty };
     }
+    if (segments.length === 3 && segments[2] === "widget-settings" && method === "GET") {
+      return { backendPath: `${path}/widget-settings`, method: "GET", query: empty };
+    }
     if (segments.length === 3 && segments[2] === "pairing" && method === "POST") {
       if (!isRecord(body) || Object.keys(body).length !== 1 || typeof body.opener_origin !== "string" || body.opener_origin.length > 2048) return null;
       return { backendPath: `${path}/pairing`, method: "POST", query: empty, body: { opener_origin: body.opener_origin } };

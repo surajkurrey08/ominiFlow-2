@@ -1,11 +1,23 @@
 # Website connection from Channels
 
-Customers create a Web Chat channel with a name and website base URL, then select
-**Connect website**. A compatible website connector opens the site's existing
-admin sign-in and explicit authorization. It saves the public widget settings
-through the site's own authenticated plugin API, then confirms the handoff.
-Customers do not copy service URLs or keys, edit environment files or rebuild
-their websites after an approved settings change.
+Customers create a Web Chat channel with a name and website base URL. The next
+screen immediately shows the generated **Public widget key**, **Frontend URL**
+and **Backend URL**, with Copy buttons. Paste all three into the Omniflow plugin
+in the website's live admin panel, enable chat, and save. Existing channels expose
+the same values through **View plugin settings**, without rotating their key.
+No `/omniflow/connect` route, authorization popup or website code change is
+required when the website already has a working plugin settings panel.
+
+For this installation the frontend and backend values are both
+`https://fmfilms.in`, without `/api/v1`. The key must belong to the matching live
+Omniflow channel, not a different channel or a separate local database.
+After saving, refresh the website and send a visitor message. **Check chat
+activity** becomes Active after a stored visitor message, even without pairing.
+Reading/copying settings alone does not prove the plugin is installed.
+
+`GET /api/v1/channels/{id}/web-chat/widget-settings` returns the platform URLs
+and existing public key. It is tenant-scoped, requires `channel:read`, uses
+`Cache-Control: no-store`, and does not create a handoff token or change settings.
 
 ## Platform configuration
 
@@ -16,7 +28,10 @@ backend default is `http://localhost:8000`. Both are origins, without paths or
 accepted only for local website testing. This workflow does not create hosting,
 DNS or a tunnel. Run `alembic upgrade head` for the additive pairing table.
 
-## Browser protocol: omniflow-pairing-v1
+## Optional legacy browser protocol: omniflow-pairing-v1
+
+These endpoints remain available for compatible integrations. The Channels UI
+uses the manual plugin setup above and does not launch this protocol.
 
 1. The authenticated dashboard creates a tenant-scoped, ten-minute handoff.
    Its random 256-bit token is returned once and stored only as a SHA-256 hash.
@@ -52,24 +67,34 @@ a handoff does not undo website settings that its admin has already saved.
 
 ## Status meaning
 
-- Ready / not connected: channel key exists; website has not approved installation.
+- Ready / not connected: channel key exists; no visitor message has been received.
 - Awaiting approval / expired: handoff exists, but is pending or needs a restart.
 - Authorized: website admin completed the save/confirmation flow. This is a
   browser-mediated administrative receipt, not DNS ownership verification or a
   guarantee of script availability.
-- Active: a visitor message was actually stored after the last authorization.
+- Active: a visitor message was actually stored. Manual setup requires no pairing;
+  a legacy authorized installation uses activity after its last authorization.
 - Disconnected: Omniflow no longer routes this channel. Website settings remain
   under that website's own administrator; no remote admin credential is retained.
 
 Existing public widget keys, conversations and manual embeds keep working. AI and
-old chatbot history are not migrated. For another website, implement the same
-connector contract in its frontend/admin integration and create a separate channel.
+old chatbot history are not migrated. For another website, create a separate channel and copy its key into that
+website's plugin settings. Each website needs a compatible widget loader once.
 
-The copy-ready instructions for the website's coding agent are in
+Optional legacy connector instructions for the website's coding agent are in
 [`website-plugin-prompt.md`](website-plugin-prompt.md). That work belongs to the
 website/plugin project and is not performed by Omniflow automatically.
 
 ## Verification
+
+Manual setup: 30 backend setup/widget tests and 10 channel proxy checks passed.
+The production build and targeted new-code lint passed. Isolated browser checks
+covered creation, clipboard and clipboard denial, URL and activity failures,
+retry, reopening with the same key, Escape/focus, four viewports down to 320px,
+and actual widget/Inbox UI replies using synthetic APIs. No popup or pairing
+request was made. This does not claim a live customer message round-trip.
+
+Earlier legacy pairing verification:
 
 - `cd backend && .venv/Scripts/python.exe -m unittest tests.test_web_chat_pairing tests.test_web_chat -q`: 24 tests passed. The PostgreSQL harness rolls back all fixtures.
 - `cd frontend && npm run test:channels`: 9 tests passed.

@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models import ChannelConnection, ChannelStatus, ChannelType, Message, MessageDirection, WebChatPairing
-from app.schemas.web_chat_pairing import WebChatInstallationResponse, WebChatPairingResponse, WebChatSetupRequest
+from app.schemas.web_chat_pairing import WebChatInstallationResponse, WebChatPairingResponse, WebChatSetupRequest, WebChatWidgetSettings
 from app.services.channel_service import _to_response
 
 
@@ -94,6 +94,21 @@ def create_website_channel(db: Session, tenant_id, user_id, data: WebChatSetupRe
     return _to_response(channel)
 
 
+def widget_settings(db: Session, tenant_id, channel_id):
+    """Read public plugin values without creating or consuming a pairing request."""
+    channel = _channel(db, tenant_id, channel_id)
+    frontend = normalize_origin(settings.web_chat_public_frontend_url or settings.frontend_url)
+    backend = normalize_origin(settings.web_chat_public_backend_url)
+    website = _metadata(channel).get("website_origin")
+    if website and urlsplit(website).hostname not in {"localhost", "127.0.0.1", "::1"}:
+        normalize_origin(frontend, production=True)
+        normalize_origin(backend, production=True)
+    if not channel.external_account_id:
+        raise PairingError("Activate this Web Chat channel to generate its public widget key.", 409)
+    return WebChatWidgetSettings(channel_id=channel.id, frontend_url=frontend,
+                                 backend_url=backend, public_key=channel.external_account_id)
+
+
 def start_pairing(db: Session, tenant_id, user_id, channel_id, opener_origin: str):
     channel = _channel(db, tenant_id, channel_id)
     if channel.status != ChannelStatus.CONNECTED or not channel.is_active:
@@ -102,17 +117,13 @@ def start_pairing(db: Session, tenant_id, user_id, channel_id, opener_origin: st
     if not meta.get("website_origin"):
         raise PairingError("Save a website address before starting the connection.")
     website = normalize_origin(meta["website_origin"])
-    frontend = normalize_origin(settings.web_chat_public_frontend_url or settings.frontend_url)
-    backend = normalize_origin(settings.web_chat_public_backend_url)
+    widget = widget_settings(db, tenant_id, channel_id)
+    frontend, backend = widget.frontend_url, widget.backend_url
     opener = normalize_origin(opener_origin)
     allowed = {normalize_origin(v) for v in settings.allowed_frontend_origins}
     allowed.add(frontend)
     if opener not in allowed:
         raise PairingError("Open this workspace from its configured Omniflow address.", 403)
-    # A live website must not receive a local/private service configuration.
-    if not urlsplit(website).hostname in {"localhost", "127.0.0.1", "::1"}:
-        normalize_origin(frontend, production=True)
-        normalize_origin(backend, production=True)
     previous = db.query(WebChatPairing).filter_by(channel_id=channel.id, consumed_at=None, cancelled_at=None).all()
     for pending in previous:
         pending.cancelled_at = utcnow()
@@ -199,9 +210,9 @@ def installation(db: Session, tenant_id, channel_id):
     pairing = db.get(WebChatPairing, uuid.UUID(meta["active_pairing_id"])) if meta.get("active_pairing_id") else None
     paired_at = datetime.fromisoformat(meta["paired_at"]) if meta.get("paired_at") else None
     state = "authorized" if paired_at else "not_connected"
-    if paired_at and last_in and last_in >= paired_at:
+    if last_in and (paired_at is None or last_in >= paired_at):
         state = "active"
-    if pairing and pairing.consumed_at is None and pairing.cancelled_at is None:
+    if state != "active" and pairing and pairing.consumed_at is None and pairing.cancelled_at is None:
         state = "expired" if pairing.expires_at <= utcnow() else "awaiting_approval"
     if channel.status != ChannelStatus.CONNECTED or not channel.is_active:
         state = "disconnected"
