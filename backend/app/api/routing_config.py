@@ -18,10 +18,7 @@ def get_routing_config(
     _=Depends(require_permission("tenant:update")),
     channel_connection_id: uuid.UUID | None = Query(None),
 ):
-    """Current routing config for the tenant, optionally scoped to a channel.
-    If channel_connection_id is given, returns that channel's config (or falls
-    back to the global config if no channel-specific row exists).
-    """
+    """Read this channel's config; missing settings never inherit another business's defaults."""
     if channel_connection_id is not None:
         owned_channel(db, tenant.id, channel_connection_id)
         config = (
@@ -62,8 +59,8 @@ def update_routing_config(
     """
     owned_channel(db, tenant.id, data.channel_connection_id)
     flow_id = data.fallback_flow_id
-    if data.fallback_action == "flow":
-        if flow_id is None:
+    if data.fallback_action == "flow" or flow_id is not None:
+        if data.fallback_action == "flow" and flow_id is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="A flow must be selected when the fallback action is 'flow'.",
@@ -84,6 +81,7 @@ def update_routing_config(
                 TenantRoutingConfig.tenant_id == tenant.id,
                 TenantRoutingConfig.channel_connection_id == channel_connection_id,
             )
+            .with_for_update()
             .first()
         )
         if config is None:
@@ -96,14 +94,21 @@ def update_routing_config(
                 TenantRoutingConfig.tenant_id == tenant.id,
                 TenantRoutingConfig.channel_connection_id.is_(None),
             )
+            .with_for_update()
             .first()
         )
         if config is None:
             config = TenantRoutingConfig(tenant_id=tenant.id, channel_connection_id=None)
             db.add(config)
 
+    if data.expected_updated_at is not None and config.updated_at is not None and config.updated_at != data.expected_updated_at:
+        raise HTTPException(409, "Settings changed in another session. Reload saved settings before saving again.")
     config.fallback_action = data.fallback_action
     config.fallback_flow_id = flow_id
+    # Older clients update routing only; do not erase the assistant's knowledge.
+    for field in ("flow_ai_enabled", "ai_instructions", "ai_knowledge", "ai_unavailable_reply"):
+        if field in data.model_fields_set:
+            setattr(config, field, getattr(data, field))
     db.commit()
     db.refresh(config)
     return config

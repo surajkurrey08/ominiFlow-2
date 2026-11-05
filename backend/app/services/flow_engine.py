@@ -18,6 +18,7 @@ service supports text + template), and the reply is matched by number or title.
 import json
 import logging
 import uuid
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -44,6 +45,8 @@ logger = logging.getLogger("app.services.flow_engine")
 
 _NS = uuid.UUID("9a7e4c1b-2d3f-4a56-8b90-1c2d3e4f5a6b")
 _MAX_STEPS = 100
+_LANGUAGE_NAMES = {"en": {"english", "इंग्लिश", "अंग्रेजी"},
+                   "hi": {"hindi", "हिंदी", "हिन्दी"}, "mr": {"marathi", "मराठी"}}
 
 
 # --------------------------------------------------------------------------
@@ -199,11 +202,35 @@ def _match_choice(node: dict[str, Any], reply: str, reply_id: str | None = None,
         if title and r == title:
             return f"{prefix}:{_clean_opt_id(opt, i)}"
 
+    # Language names and panel-authored aliases work even without a paid AI call.
+    languages = _LANGUAGE_NAMES.values()
+    normalized = unicodedata.normalize("NFKC", r).strip(" .!?।")
+    matches = []
+    for i, opt in enumerate(options):
+        title = unicodedata.normalize("NFKC", str(opt.get("title") or opt.get("label") or "")).strip().lower()
+        raw_aliases = opt.get("aliases")
+        aliases = {a.strip().lower() for a in raw_aliases if isinstance(a, str)} if isinstance(raw_aliases, list) else set()
+        for names in languages:
+            if title in names:
+                aliases |= names
+        if normalized in aliases:
+            matches.append(f"{prefix}:{_clean_opt_id(opt, i)}")
+    if len(matches) == 1:
+        return matches[0]
+
     # 5. By partial substring match fallback.
+    data = node.get("data") or {}
+    if data.get("requireExplicitChoice") or "{{" in str(data.get("message") or ""):
+        return None
+    matches = []
     for i, opt in enumerate(options):
         title = str(opt.get("title") or opt.get("label") or "").strip().lower()
-        if title and (r in title or title in r):
-            return f"{prefix}:{_clean_opt_id(opt, i)}"
+        # A longer sentence may negate an option ("do not confirm enquiry").
+        # Leave sentence interpretation to the guarded assistant instead.
+        if title and r and r in title:
+            matches.append(f"{prefix}:{_clean_opt_id(opt, i)}")
+    if len(matches) == 1:
+        return matches[0]
 
     return None
 
@@ -795,6 +822,16 @@ def _run(db: Session, session: FlowSession) -> None:
         if node is None:
             break
         session.current_node_id = node_id
+        data = node.get("data") or {}
+        # Only fields explicitly extracted from this customer's message may be
+        # skipped. Consume the marker so a later loop asks the question again.
+        filled = list((session.variables or {}).get("_assistant_filled", []))
+        variable = str(data.get("variable") or "")
+        if _mt(node) == "get_user_data" and variable in filled:
+            filled.remove(variable)
+            session.variables = {**session.variables, "_assistant_filled": filled}
+            node_id = _next_node_id(session, node_id, None)
+            continue
         kind, payload = _execute(db, session, node, contact)
         if kind == "wait_reply":
             session.status = FlowSessionStatus.WAITING.value
@@ -864,6 +901,150 @@ def start_session(db: Session, flow: Flow, conversation: Conversation, contact: 
     return session
 
 
+def _assistant_plan(session: FlowSession, node: dict, decision) -> tuple[str, dict[str, str]] | None:
+    """Validate a contiguous conversational path. AI cannot jump to tools or submit reviews."""
+    nodes = _node_map(session)
+    current = node
+    seen = set()
+
+    def skip_text(item):
+        while item and _mt(item) == "text":
+            if item["id"] in seen:
+                return None
+            seen.add(item["id"])
+            item = nodes.get(_next_node_id(session, str(item["id"]), None))
+        return item
+
+    for choice in decision.route:
+        current = skip_text(current)
+        if not current or str(current["id"]) != choice.node_id or _mt(current) not in ("button", "list"):
+            return None
+        if current["id"] in seen:
+            return None
+        seen.add(current["id"])
+        # Review/submit menus show captured variables; an explicit numeric/title
+        # selection is required. Never let an LLM confirm details on its own.
+        if (current.get("data") or {}).get("requireExplicitChoice") or "{{" in str((current.get("data") or {}).get("message") or ""):
+            return None
+        option = next((o for i, o in enumerate(_options(current))
+                       if _clean_opt_id(o, i) == choice.option_id and o.get("kind", "reply") == "reply"), None)
+        if option is None:
+            return None
+        handle = f"{_option_prefix(current)}:{choice.option_id}"
+        matching = [e for e in session.edges or [] if str(e.get("source")) == str(current["id"])
+                    and e.get("sourceHandle") == handle]
+        if len(matching) != 1:
+            return None
+        current = nodes.get(str(matching[0].get("target")))
+    if not current or current["id"] in seen or _mt(current) not in ("text", "button", "list", "get_user_data"):
+        return None
+    target = str(current["id"])
+    allowed = set()
+    cursor = current
+    walked = set()
+    while cursor and _mt(cursor) in ("text", "get_user_data") and len(walked) < 30:
+        if cursor["id"] in walked:
+            return None
+        walked.add(cursor["id"])
+        data = cursor.get("data") or {}
+        if _mt(cursor) == "get_user_data":
+            variable = str(data.get("variable") or "input")
+            if not variable.startswith("_"):
+                allowed.add(variable)
+        cursor = nodes.get(_next_node_id(session, str(cursor["id"]), None))
+    if cursor and _mt(cursor) not in ("button", "list"):
+        return None  # never run an integration/payment as an AI continuation
+    values = {v.variable: v.value for v in decision.values}
+    if len(values) != len(decision.values):
+        return None
+    if any(key not in allowed for key in values):
+        return None
+    current_variable = str((node.get("data") or {}).get("variable") or "input") if _mt(node) == "get_user_data" else None
+    if any(key in (session.variables or {}) and key != current_variable for key in values):
+        return None  # no implicit rewriting of previously supplied answers
+    if not decision.route and not values:
+        return None
+    return target, values
+
+
+def _assist_reply(db: Session, session: FlowSession, conversation: Conversation, node: dict, text: str) -> bool:
+    from app.models import Message
+    from app.services import channel_assistant_service as assistant
+    config = assistant.config_for(db, conversation)
+    if config is None or not config.flow_ai_enabled:
+        return False
+    event_id = str((session.variables or {}).get("_reply_event") or uuid.uuid4().hex)
+    message = None
+    try:
+        message = db.get(Message, uuid.UUID(event_id))
+    except ValueError:
+        pass
+    if message and (message.tenant_id != conversation.tenant_id or message.conversation_id != conversation.id):
+        message = None
+    decision = assistant.interpret(db, conversation, text, config, session=session, node=node, message=message)
+    # A human may take over while the provider call is in flight.
+    db.refresh(conversation, attribute_names=["conversation_metadata"])
+    if (conversation.conversation_metadata or {}).get("mode") == "human":
+        return True
+    if decision is not None:
+        assistant.remember_language(conversation, decision.language)
+    seq = "assistant:" + event_id
+    if decision is not None and decision.action == "advance":
+        plan = _assistant_plan(session, node, decision)
+        if plan is not None:
+            target, values = plan
+            filled = set((session.variables or {}).get("_assistant_filled", [])) | set(values)
+            session.variables = {**(session.variables or {}), **values, "_assistant_filled": list(filled)}
+            if target == str(node["id"]) and _mt(node) == "get_user_data" and str((node.get("data") or {}).get("variable") or "input") not in filled:
+                prompt = _interpolate(str((node.get("data") or {}).get("message") or "Please reply."),
+                                      db.get(Contact, session.contact_id), session.variables)
+                _send_text(db, session, str(node["id"]), decision.reply or prompt, seq=seq)
+                db.commit()
+                return True
+            session.current_node_id = target
+            session.status = FlowSessionStatus.ACTIVE.value
+            session.waiting_node_id = None
+            session.wait_kind = None
+            _run(db, session)
+            return True
+    if decision is not None and decision.action == "handover":
+        _send_text(db, session, str(node["id"]), decision.reply or "I’m switching this chat to our team.", seq=seq)
+        conversation.conversation_metadata = {**(conversation.conversation_metadata or {}), "mode": "human"}
+        session.status = FlowSessionStatus.COMPLETED.value
+        session.waiting_node_id = None
+        session.wait_kind = None
+    else:
+        # Questions/thanks/outages never become a guest name, date or budget.
+        reply = decision.reply if decision and decision.action in ("answer", "clarify") else ""
+        _send_text(db, session, str(node["id"]), reply or assistant.unavailable_reply(config, conversation), seq=seq)
+    db.commit()
+    return True
+
+
+def _keyword_interrupt(db: Session, session: FlowSession, conversation: Conversation, node: dict, text: str) -> bool:
+    from app.services import keyword_trigger_service
+    kw = keyword_trigger_service.find_matching_keyword(db, session.tenant_id, text,
+                                                       channel_connection_id=conversation.channel_connection_id)
+    if kw is None:
+        return False
+    if kw.flow_id is not None:
+        session.status = FlowSessionStatus.COMPLETED.value
+        session.waiting_node_id = None
+        session.wait_kind = None
+        session.detail = f"Interrupted by keyword: {kw.keyword_text}"
+        db.commit()
+        flow, contact = db.get(Flow, kw.flow_id), db.get(Contact, session.contact_id)
+        if flow and contact:
+            start_session(db, flow, conversation, contact, session.actor_user_id)
+        return True
+    if kw.reply_text and kw.reply_text.strip():
+        _send_text(db, session, str(node["id"]), kw.reply_text.strip(),
+                   seq="keyword:" + str((session.variables or {}).get("_reply_event") or uuid.uuid4().hex))
+        db.commit()
+        return True  # acknowledge without discarding the pending question
+    return False
+
+
 def resume_with_reply(db: Session, session: FlowSession, reply_text: str) -> None:
     """Advance a WAITING session using the customer's reply."""
     if session.status != FlowSessionStatus.WAITING.value or session.wait_kind != FlowSessionWait.REPLY.value:
@@ -874,6 +1055,8 @@ def resume_with_reply(db: Session, session: FlowSession, reply_text: str) -> Non
         session.status = FlowSessionStatus.FAILED.value
         session.detail = "Flow is not assigned to this conversation channel."
         db.commit()
+        return
+    if (conversation.conversation_metadata or {}).get("mode") == "human":
         return
     nodes = _node_map(session)
     node = nodes.get(session.waiting_node_id or "")
@@ -886,6 +1069,7 @@ def resume_with_reply(db: Session, session: FlowSession, reply_text: str) -> Non
     reply_id = None
     reply_title = None
     actual_text = reply_text
+    reply_event = uuid.uuid4().hex
     if reply_text and reply_text.startswith("{") and reply_text.endswith("}"):
         try:
             payload = json.loads(reply_text)
@@ -893,11 +1077,13 @@ def resume_with_reply(db: Session, session: FlowSession, reply_text: str) -> Non
                 reply_id = payload.get("id")
                 reply_title = payload.get("title")
                 actual_text = payload.get("text") or reply_title or reply_id or ""
+                reply_event = str(payload.get("message_id") or reply_event)
         except Exception:
             pass
 
     variables = dict(session.variables or {})
     variables["user_last_input"] = actual_text
+    variables["_reply_event"] = reply_event
     session.variables = variables
     contact = db.get(Contact, session.contact_id)
     mt = _mt(node)
@@ -905,37 +1091,33 @@ def resume_with_reply(db: Session, session: FlowSession, reply_text: str) -> Non
     if mt in ("button", "list"):
         handle = _match_choice(node, actual_text, reply_id=reply_id, reply_title=reply_title)
         if handle is None:
-            # Check if this input matches an active keyword to interrupt or restart
-            from app.services import keyword_trigger_service
-            kw = keyword_trigger_service.find_matching_keyword(
-                db, session.tenant_id, actual_text, channel_connection_id=conversation.channel_connection_id,
-            )
-            if kw is not None and (kw.flow_id is not None or (kw.reply_text and kw.reply_text.strip())):
-                # Complete the stuck session so the keyword trigger can execute cleanly
-                session.status = FlowSessionStatus.COMPLETED.value
-                session.waiting_node_id = None
-                session.wait_kind = None
-                session.detail = f"Interrupted by keyword: {kw.keyword_text}"
-                db.commit()
-                # Directly run the newly matched flow or reply text
-                if kw.flow_id:
-                    flow = db.get(Flow, kw.flow_id)
-                    conv = db.get(Conversation, session.conversation_id)
-                    if flow and conv and contact:
-                        start_session(db, flow, conv, contact, session.actor_user_id)
-                elif kw.reply_text:
-                    _send_text(db, session, str(node["id"]), kw.reply_text.strip(), seq="kw_reply")
+            if _keyword_interrupt(db, session, conversation, node, actual_text):
                 return
 
-            # Unrecognised choice: re-send the menu and keep waiting.
+            if _assist_reply(db, session, conversation, node, actual_text):
+                return
+            # Each inbound reply needs its own reprompt; a per-node key silences
+            # the second invalid reply forever.
             try:
-                _send_text(db, session, str(node["id"]), _menu_text(node, contact, variables), seq="reprompt")
+                from app.services.channel_assistant_service import CHOICE_PROMPT, language_for
+                _send_text(db, session, str(node["id"]), CHOICE_PROMPT[language_for(conversation)] + "\n" + _menu_text(node, contact, variables), seq="reprompt:" + reply_event)
             except OutboundMessageError:
                 pass
             db.commit()
             return
         next_id = _next_node_id(session, str(node["id"]), handle)
+        for i, option in enumerate(_options(node)):
+            if handle == f"{_option_prefix(node)}:{_clean_opt_id(option, i)}":
+                title = str(option.get("title") or option.get("label") or "").strip().lower()
+                for language, names in _LANGUAGE_NAMES.items():
+                    if title in names:
+                        from app.services.channel_assistant_service import remember_language
+                        remember_language(conversation, language)
     elif mt == "get_user_data":
+        if _keyword_interrupt(db, session, conversation, node, actual_text):
+            return
+        if _assist_reply(db, session, conversation, node, actual_text):
+            return
         var = str((node.get("data") or {}).get("variable") or "input")
         variables[var] = actual_text
         session.variables = variables
@@ -955,13 +1137,20 @@ def resume_with_reply(db: Session, session: FlowSession, reply_text: str) -> Non
     _run(db, session)
 
 
-def capture_reply(db: Session, session: FlowSession, reply_text: str, metadata: dict[str, Any] | None = None) -> None:
+def capture_reply(db: Session, session: FlowSession, reply_text: str, metadata: dict[str, Any] | None = None,
+                  message_id: uuid.UUID | None = None) -> None:
     """Store a customer reply on a WAITING(reply) session inside the inbound
     transaction. The worker resumes the flow with it (no sending here)."""
     ir = metadata.get("interactive_reply") if isinstance(metadata, dict) else None
-    if ir and isinstance(ir, dict):
-        payload = {"text": reply_text, "id": ir.get("id"), "title": ir.get("title")}
-        session.pending_reply = json.dumps(payload)[:4096]
+    if message_id is not None or (ir and isinstance(ir, dict)):
+        payload = {"text": reply_text[:4000], "id": ir.get("id") if isinstance(ir, dict) else None,
+                   "title": ir.get("title") if isinstance(ir, dict) else None,
+                   "message_id": str(message_id) if message_id else None}
+        encoded = json.dumps(payload, ensure_ascii=False)
+        while len(encoded) > 4096 and payload["text"]:
+            payload["text"] = payload["text"][:len(payload["text"]) // 2]
+            encoded = json.dumps(payload, ensure_ascii=False)
+        session.pending_reply = encoded
     else:
         session.pending_reply = (reply_text or "")[:4096]
     session.pending_reply_at = datetime.now(timezone.utc)

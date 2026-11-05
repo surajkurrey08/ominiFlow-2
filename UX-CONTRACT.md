@@ -25,6 +25,7 @@ The latest user-supplied three-column screenshot establishes the reference match
 | Select/Listbox | Native controls in Inbox and Templates | Existing options and handlers; platform-owned popup | Filters, assignee, status, template category/channel | Browser keyboard and open-popup checks |
 | Form | Existing Inbox, Templates and Web Chat handlers | inbox-client.tsx, TemplatesClient, PlatformTemplateLibrary and WebChatSetupDialog | Reply, template samples, library admin, AI drafts and website setup | Existing tests and isolated browser fixture |
 | Channel routing | ChannelConnectionSelect and flow/keyword forms | channel_scope_service plus validated actual connection IDs | Create, assign legacy flow, filter list, select same-channel flow | Channel isolation DB tests, proxy tests and synthetic browser fixture |
+| Channel assistant | ChannelAssistant, ChannelConnectionSelect and AppDialog | routing_config API, channel_assistant_service and guarded flow engine | Channel knowledge, default flow, opt-in free-text replies, instructions, unavailable reply | Assistant boundary tests, native select, save/error/conflict/dirty-state browser checks |
 | Scrollbar | frontend/src/app/globals.css | DESIGN.md and scoped inbox CSS | Conversation list, history, inspector | Overflow measurements and browser screenshots |
 | Toast | Existing inline live regions | Inbox errors and status feedback | Loading, error, connection state | Failure and loading preview |
 | CRUD | frontend/src/lib/api/inbox.ts and existing Contacts/Tags browser clients | Backend conversation and outbound contracts | Read, reply, assignment, status, mode | Existing inbox tests; fixture interactions |
@@ -82,6 +83,16 @@ Do not remove delivery failures, disconnected-channel guidance or permission
 errors as part of removing decorative text. Provider tabs add the enumerated `channel_type` filter through the existing inbox proxy and conversation-list API. The service scopes the channel subquery to the current tenant. Existing permission checks remain authoritative.
 
 ## Verification
+
+AI Configuration → Channel Assistant preserves drafts when switching its tabs.
+Channel changes, reload and link navigation use AppDialog before discarding edits;
+browser unload uses the browser lifecycle warning. Native select popups follow the
+existing OS-owned contract. Save uses the routing row's version timestamp and
+retains edits on errors/conflicts. Channel knowledge is separate from the global
+Business Profile and from the existing document-library preview. Runtime policy
+and validation live in `backend/app/api/routing_config.py` and
+`backend/app/services/channel_assistant_service.py`; credit accounting continues
+through `payment_service.py`. AI is opt-in per channel, not enabled by migration.
 
 Run inbox/proxy/realtime unit checks, TypeScript, targeted ESLint, production
 build, and the premium static audit scoped to this changed workflow. Use the real

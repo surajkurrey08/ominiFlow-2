@@ -42,6 +42,10 @@ are shared across authenticated workspace routes through `.app-shell-workspace`.
 Inbox content styling remains scoped to `.app-shell-inbox`; sibling page content
 retains its established layout and scrolling.
 The interface is English; customer names and messages may use any language.
+The Channel Assistant form uses the shared channel selector and modal behavior,
+native option popups, inline save/error status and the existing purple controls.
+It edits one channel at a time; long knowledge textareas own their local overflow
+while the settings page retains normal document scrolling.
 No Japan-specific market or localization requirements are established.
 The primary usage is repeated desktop work with a single-pane mobile alternative.
 

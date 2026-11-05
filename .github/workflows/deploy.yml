@@ -64,7 +64,7 @@ jobs:
           docker compose run --rm --no-deps backend alembic upgrade head
           docker compose run --rm --no-deps backend python -m app.db.run_seed
           docker compose run --rm --no-deps -v "$PWD/backend/tests:/app/tests:ro" backend \
-            python -m unittest tests.test_web_chat_pairing tests.test_web_chat tests.test_inbox_api tests.test_channel_scoping tests.test_keywords tests.test_flow_engine tests.test_flow_elements_complete -q
+            python -m unittest tests.test_web_chat_pairing tests.test_web_chat tests.test_inbox_api tests.test_channel_scoping tests.test_keywords tests.test_flow_engine tests.test_flow_elements_complete tests.test_channel_assistant_unit tests.test_ai_config -q
           docker compose up -d --no-build --wait --wait-timeout 180
           docker exec fmfilms-backend python /app/healthcheck.py api
           docker exec fmfilms-web node -e "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"

@@ -103,14 +103,14 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const flowsApi = {
-  list: async (search?: string, channelId?: string) => {
+  list: async (search?: string, channelId?: string, signal?: AbortSignal) => {
     const items: FlowSummary[] = [];
     let total = 0;
     do {
       const params = new URLSearchParams({ skip: String(items.length), limit: "100" });
       if (search) params.set("search", search);
       if (channelId) params.set("channel_connection_id", channelId);
-      const result = await api<FlowListResponse>(`/api/flows?${params}`);
+      const result = await api<FlowListResponse>(`/api/flows?${params}`, { signal });
       total = result.total;
       items.push(...result.items);
       if (!result.items.length) break;

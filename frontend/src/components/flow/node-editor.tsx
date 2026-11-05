@@ -20,7 +20,7 @@ const OPERATORS = [
 ];
 
 type ButtonKind = "reply" | "url" | "call";
-type ButtonOpt = { id: string; title: string; kind?: ButtonKind; url?: string; phoneNumber?: string };
+type ButtonOpt = { id: string; title: string; kind?: ButtonKind; url?: string; phoneNumber?: string; aliases?: string[] };
 type ListOpt = { id: string; title: string; description?: string };
 type Condition = { source?: string; operator?: string; value?: string };
 type HeaderData = { type?: "none" | "text" | "image" | "video" | "audio" | "document"; text?: string; mediaKey?: string; mediaUrl?: string; mediaName?: string };
@@ -80,13 +80,10 @@ export function NodeEditor({
   const headerType = String(header.type ?? "none");
   const setHeader = (patch: Partial<HeaderData>) => onChange({ header: { ...header, ...patch } });
 
-  const [headerMediaMode, setHeaderMediaMode] = useState<"upload" | "url">("upload");
-
-  useEffect(() => {
-    if (header.mediaUrl && !header.mediaKey) {
-      setHeaderMediaMode("url");
-    }
-  }, [node.id, header.type]);
+  const [headerModeChoice, setHeaderModeChoice] = useState<{ node: string; type: string; mode: "upload" | "url" } | null>(null);
+  const headerMediaMode = headerModeChoice?.node === node.id && headerModeChoice.type === headerType
+    ? headerModeChoice.mode : header.mediaUrl && !header.mediaKey ? "url" : "upload";
+  const setHeaderMediaMode = (mode: "upload" | "url") => setHeaderModeChoice({ node: node.id, type: headerType, mode });
   const isMedia = MEDIA_MESSAGE_TYPES.has(messageType);
   const isText = messageType === "text";
   const showMessageBox = ["text", "button", "list", "get_user_data", "audio", "document", "image", "video"].includes(messageType);
@@ -517,6 +514,10 @@ export function NodeEditor({
         {/* Button Message Configuration */}
         {messageType === "button" && (
           <div className="space-y-3 pt-2 border-t border-slate-100">
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input type="checkbox" checked={Boolean(d.requireExplicitChoice)} onChange={e => onChange({ requireExplicitChoice: e.target.checked })} />
+              Require an explicit option selection (confirmation steps)
+            </label>
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Interactive Buttons</label>
               <span className="text-xs font-semibold text-slate-400">{buttons.length}/3</span>
@@ -566,6 +567,13 @@ export function NodeEditor({
                       />
                     </div>
 
+                    {kind === "reply" && <div>
+                      <label htmlFor={`button-aliases-${b.id}`} className="block text-xs font-semibold text-slate-600">Other accepted replies</label>
+                      <input id={`button-aliases-${b.id}`} value={(b.aliases || []).join(", ")} maxLength={500}
+                        onChange={e => upd({ aliases: e.target.value.split(",").map(value => value.trimStart()).slice(0, 20) })}
+                        placeholder="Separate alternatives with commas"
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs outline-none focus:border-blue-500" />
+                    </div>}
                     {kind === "url" && (
                       <div className="space-y-1">
                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Website URL</label>
@@ -1001,7 +1009,7 @@ export function NodeEditor({
                         )}
                         {tplButtons.length > 0 && (
                           <div className="space-y-1 pt-1 border-t border-slate-100">
-                            {tplButtons.map((btn: any, bIdx: number) => (
+                            {tplButtons.map((btn: { text?: string; title?: string }, bIdx: number) => (
                               <div
                                 key={bIdx}
                                 className="w-full py-1.5 text-center text-[11px] font-semibold text-[#00a884] bg-[#f0f2f5] rounded-lg border border-slate-200/60"

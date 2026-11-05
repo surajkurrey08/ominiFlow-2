@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 const ChevronLeftIcon = (props: React.SVGProps<SVGSVGElement>) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><polyline points="15 18 9 12 15 6" /></svg>);
 const KeyIcon = (props: React.SVGProps<SVGSVGElement>) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" /></svg>);
@@ -16,29 +16,23 @@ const InfoIcon = (props: React.SVGProps<SVGSVGElement>) => (<svg xmlns="http://w
 import { useAiConfigHook } from "./use-ai-config";
 import { useCreditBalance } from "@/lib/credits/use-credit-balance";
 import { KnowledgeBaseTab } from "./knowledge-base-tab";
+import { ChannelAssistant } from "./channel-assistant";
+
+const subscribeToLocation = (listener: () => void) => {
+  window.addEventListener("popstate", listener);
+  return () => window.removeEventListener("popstate", listener);
+};
+function locationTab() {
+  const value = new URLSearchParams(window.location.search).get("tab")?.toLowerCase().replace(/[_ ]/g, "-");
+  return ({ "business-profile": "Business Profile", "api-providers": "API Providers", "agent-tools": "Agent Tools",
+    "knowledge-base": "Knowledge Base", "channel-assistant": "Channel Assistant" } as Record<string, string>)[value || ""] || "API Providers";
+}
 
 export function AiConfigClient() {
   const creditBalance = useCreditBalance();
-  const [activeTab, setActiveTab] = useState("API Providers");
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      const tabParam = params.get("tab");
-      if (tabParam) {
-        const lower = tabParam.toLowerCase();
-        if (lower === "business-profile" || lower === "business profile" || lower === "business_profile") {
-          setActiveTab("Business Profile");
-        } else if (lower === "api-providers" || lower === "api providers") {
-          setActiveTab("API Providers");
-        } else if (lower === "agent-tools" || lower === "agent tools") {
-          setActiveTab("Agent Tools");
-        } else if (lower === "knowledge-base" || lower === "knowledge base") {
-          setActiveTab("Knowledge Base");
-        }
-      }
-    }
-  }, []);
+  const urlTab = useSyncExternalStore(subscribeToLocation, locationTab, () => "API Providers");
+  const [chosenTab, setActiveTab] = useState<string | null>(null);
+  const activeTab = chosenTab ?? urlTab;
   
   const {
     provider, setProvider,
@@ -88,8 +82,8 @@ export function AiConfigClient() {
       <div className="p-6 mx-auto max-w-7xl">
         
         {/* Tabs */}
-        <div className="flex gap-2 mb-8 border-b border-slate-200 pb-px">
-          {["API Providers", "Business Profile", "Agent Tools", "Knowledge Base"].map(tab => (
+        <div className="flex flex-wrap gap-2 mb-8 border-b border-slate-200 pb-px">
+          {["API Providers", "Channel Assistant", "Business Profile", "Agent Tools", "Knowledge Base"].map(tab => (
             <button 
               key={tab}
               onClick={() => {
@@ -116,6 +110,7 @@ export function AiConfigClient() {
         </div>
 
         {/* Content Area */}
+        <div hidden={activeTab !== "Channel Assistant"}><ChannelAssistant /></div>
         {activeTab === "API Providers" && (
           <div className="max-w-4xl mx-auto">
             {/* Provider Selection */}

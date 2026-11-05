@@ -14,6 +14,7 @@ the status transition (matched → delivered/failed/skipped) stops re-processing
 """
 import logging
 import uuid
+import json
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -29,6 +30,26 @@ logger = logging.getLogger("app.services.flow_runner")
 
 # Fixed namespace so a trigger always maps to the same idempotency key.
 _IDEMPOTENCY_NS = uuid.UUID("6f3c1e02-7a21-4c9c-9b2e-5a1d0f7e4b10")
+
+
+def _assistant_entry_supported(flow: Flow) -> bool:
+    """A free-text entry must reach a conversational prompt without executing tools."""
+    nodes = {str(n.get("id")): n for n in flow.nodes or []}
+    current = flow_engine._start_node(flow.nodes or [])
+    seen = set()
+    while current and len(seen) < 30:
+        key = str(current["id"])
+        if key in seen:
+            return False
+        seen.add(key)
+        kind = str((current.get("data") or {}).get("messageType") or "text")
+        if kind in ("button", "list", "get_user_data"):
+            return True
+        if kind != "text":
+            return False
+        edges = [e for e in flow.edges or [] if str(e.get("source")) == key and e.get("sourceHandle") in (None, "", "continue")]
+        current = nodes.get(str(edges[0].get("target"))) if len(edges) == 1 else None
+    return False
 
 
 def _actor(db: Session, tenant_id: uuid.UUID, keyword: Keyword | None) -> User | None:
@@ -86,7 +107,7 @@ def _resolve_text(db: Session, trigger: KeywordTrigger, keyword: Keyword | None)
 def _deliver_ai_reply(db: Session, trigger: KeywordTrigger) -> bool:
     """Generate an AI reply to the triggering message, charge credits, and send
     it. Runs in the worker (never the inbound transaction)."""
-    from app.services import ai_reply_service, payment_service
+    from app.services import ai_reply_service, payment_service, channel_assistant_service as assistant
 
     conversation = db.get(Conversation, trigger.conversation_id)
     contact = db.get(Contact, trigger.contact_id)
@@ -96,36 +117,81 @@ def _deliver_ai_reply(db: Session, trigger: KeywordTrigger) -> bool:
         trigger.detail = "Missing conversation, contact or message for the AI reply."
         return False
 
-    # Credit gate: never call the AI provider when the balance is exhausted.
-    if payment_service.get_or_create_balance(db, trigger.tenant_id) <= 0:
+    if (conversation.conversation_metadata or {}).get("mode") == "human":
         trigger.status = KeywordTriggerStatus.SKIPPED.value
-        trigger.detail = "No AI credits remaining."
+        trigger.detail = "Conversation is now handled by a human."
         return False
-
-    result = ai_reply_service.generate_reply(db, trigger.tenant_id, message.text or "")
-    if result is None:
+    config = assistant.config_for(db, conversation)
+    if config is None or config.fallback_action != "ai":
         trigger.status = KeywordTriggerStatus.SKIPPED.value
-        trigger.detail = "AI reply unavailable (not configured or empty response)."
+        trigger.detail = "AI is not enabled for this channel."
         return False
-
-    charge = payment_service.credits_for_tokens(result["tokens_in"] + result["tokens_out"])
-    payment_service.deduct_credits(
-        db, trigger.tenant_id, charge,
-        conversation_id=conversation.id, description="AI reply",
-        model=result.get("model"), tokens_in=result["tokens_in"], tokens_out=result["tokens_out"],
-    )
-
     actor = _actor(db, trigger.tenant_id, None)
     if actor is None:
         trigger.status = KeywordTriggerStatus.FAILED.value
         trigger.detail = "No active user to send the AI reply as."
         return False
 
+    # A panel-selected entry flow lets a free-text first message enter the
+    # same menus and fields as a keyword. Never select another channel's flow.
+    if config.flow_ai_enabled and config.fallback_flow_id:
+        flow = db.get(Flow, config.fallback_flow_id)
+        if not flow_matches_channel(flow, trigger.tenant_id, conversation.channel_connection_id):
+            trigger.status = KeywordTriggerStatus.SKIPPED.value
+            trigger.detail = "Default assistant flow is not assigned to this channel."
+            return False
+        if _assistant_entry_supported(flow):
+            session = flow_engine.start_session(db, flow, conversation, contact, actor.id)
+            if session is None:
+                trigger.status = KeywordTriggerStatus.SKIPPED.value
+                trigger.detail = "A flow is already handling this conversation."
+                return False
+            if session.status == "waiting" and session.wait_kind == "reply":
+                flow_engine.resume_with_reply(db, session, json.dumps({"text": message.text or "", "message_id": str(message.id)}))
+            trigger.status = KeywordTriggerStatus.FAILED.value if session.status == "failed" else KeywordTriggerStatus.DELIVERED.value
+            trigger.detail = "Channel assistant entry flow started."
+            return session.status != "failed"
+
+    # Credit gate: never call the AI provider when the balance is exhausted.
+    text = assistant.unavailable_reply(config, conversation)
+    charge = 0
+    handover = False
+    generated = False
+    if config.flow_ai_enabled:
+        decision = assistant.interpret(db, conversation, message.text or "", config, message=message)
+        db.refresh(conversation, attribute_names=["conversation_metadata"])
+        if (conversation.conversation_metadata or {}).get("mode") == "human":
+            trigger.status = KeywordTriggerStatus.SKIPPED.value
+            trigger.detail = "Human takeover while generating the reply."
+            return False
+        if decision and decision.action in ("answer", "clarify", "handover") and decision.reply.strip():
+            text = decision.reply
+            handover = decision.action == "handover"
+            generated = True
+            assistant.remember_language(conversation, decision.language)
+    elif payment_service.get_or_create_balance(db, trigger.tenant_id) > 0:
+        result = ai_reply_service.generate_reply(
+            db, trigger.tenant_id, message.text or "",
+            system_prompt=assistant.fallback_prompt(assistant.context_for(db, conversation, config)),
+            history=assistant.history_for(db, conversation, before_message=message),
+        )
+        if result:
+            text = result["text"]
+            generated = True
+            charge = payment_service.credits_for_tokens(result["tokens_in"] + result["tokens_out"])
+            payment_service.deduct_credits(db, trigger.tenant_id, charge, conversation_id=conversation.id,
+                                          description="AI reply", model=result.get("model"),
+                                          tokens_in=result["tokens_in"], tokens_out=result["tokens_out"])
+
+    if (conversation.conversation_metadata or {}).get("mode") == "human":
+        trigger.status = KeywordTriggerStatus.SKIPPED.value
+        trigger.detail = "Human takeover while generating the reply."
+        return False
     key = uuid.uuid5(_IDEMPOTENCY_NS, f"ai-reply:{trigger.id}")
     try:
         outbound_message_service.send_message(
             db, trigger.tenant_id, actor, conversation.id,
-            TextMessageCreate(type="text", text=result["text"][:4096]), idempotency_key=key,
+            TextMessageCreate(type="text", text=text[:4096]), idempotency_key=key,
         )
     except OutboundMessageError as exc:
         trigger.status = KeywordTriggerStatus.FAILED.value
@@ -133,7 +199,9 @@ def _deliver_ai_reply(db: Session, trigger: KeywordTrigger) -> bool:
         return False
 
     trigger.status = KeywordTriggerStatus.DELIVERED.value
-    trigger.detail = f"AI reply sent ({charge} credits)"
+    if handover:
+        conversation.conversation_metadata = {**(conversation.conversation_metadata or {}), "mode": "human"}
+    trigger.detail = ("Channel assistant reply sent." if config.flow_ai_enabled else f"AI reply sent ({charge} credits)") if generated else "AI unavailable notice sent."
     return True
 
 

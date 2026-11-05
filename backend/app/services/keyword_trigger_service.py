@@ -129,7 +129,7 @@ def _global_fallback_trigger(
         trigger = KeywordTrigger(
             tenant_id=tenant_id,
             keyword_id=None,
-            flow_id=None,
+            flow_id=config.fallback_flow_id if config.flow_ai_enabled else None,
             conversation_id=conversation.id,
             contact_id=contact.id,
             message_id=message.id,
@@ -209,9 +209,12 @@ def handle_inbound(
         if active is not None:
             from app.models import Flow
             if flow_matches_channel(session.get(Flow, active.flow_id), tenant_id, actual_channel):
-                if active.status == "waiting" and active.wait_kind == "reply":
+                node = next((n for n in active.nodes or [] if str(n.get("id")) == active.current_node_id), None)
+                publishing_prompt = active.status == "active" and node is not None and (node.get("data") or {}).get("messageType") in ("button", "list", "get_user_data")
+                if (active.status == "waiting" and active.wait_kind == "reply") or publishing_prompt:
                     msg_meta = getattr(message, "message_metadata", None)
-                    flow_engine.capture_reply(session, active, text, metadata=msg_meta if isinstance(msg_meta, dict) else None)
+                    flow_engine.capture_reply(session, active, text, metadata=msg_meta if isinstance(msg_meta, dict) else None,
+                                              message_id=message.id)
                 return None
             active.status = "failed"
             active.detail = "Flow is not assigned to this conversation channel."

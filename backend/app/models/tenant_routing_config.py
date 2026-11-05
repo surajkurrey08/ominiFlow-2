@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -10,8 +10,8 @@ from app.models.base import Base, TimestampMixin, UUIDMixin
 class TenantRoutingConfig(Base, UUIDMixin, TimestampMixin):
     """
     Per-channel routing config: how inbound messages that match no keyword
-    rule are handled. channel_connection_id=None means global (all channels)
-    fallback. A channel-specific row takes priority over the global row.
+    rule are handled. Legacy channel_connection_id=None rows remain readable
+    for migration but are not used as runtime defaults for other channels.
     """
 
     __tablename__ = "tenant_routing_configs"
@@ -43,6 +43,11 @@ class TenantRoutingConfig(Base, UUIDMixin, TimestampMixin):
         ForeignKey("flows.id", ondelete="SET NULL"),
         nullable=True,
     )
+
+    flow_ai_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    ai_instructions: Mapped[str] = mapped_column(Text, default="", server_default="", nullable=False)
+    ai_knowledge: Mapped[str] = mapped_column(Text, default="", server_default="", nullable=False)
+    ai_unavailable_reply: Mapped[str] = mapped_column(Text, default="", server_default="", nullable=False)
 
     __table_args__ = (
         UniqueConstraint(
